@@ -540,7 +540,7 @@ private:
 	    if (width > (1<<28)) nodep->v3error("Width of bit range is huge; vector of over 1billion bits: 0x"<<hex<<width);
 	    // Note width() not set on range; use elementsConst()
 	    if (nodep->littleEndian() && !nodep->backp()->castUnpackArrayDType()) {
-		nodep->v3warn(LITENDIAN,"Little bit endian vector: MSB < LSB of bit range: "<<nodep->lsbConst()<<":"<<nodep->msbConst());
+        nodep->v3warn(LITENDIAN,"Little bit endian vector: MSB < LSB of bit range: "<<nodep->lsbConst()<<":"<<nodep->msbConst());
 	    }
 	}
     }
@@ -2181,7 +2181,7 @@ private:
 		// TODO Simple dtype checking, should be a more general check
 		AstNodeArrayDType* exprArrayp = exprDTypep->skipRefp()->castUnpackArrayDType();
 		AstNodeArrayDType* modArrayp = modDTypep->skipRefp()->castUnpackArrayDType();
-		if (exprArrayp && modArrayp && exprArrayp->subDTypep()->skipRefp()->castIfaceRefDType() 
+		if (exprArrayp && modArrayp && exprArrayp->subDTypep()->skipRefp()->castIfaceRefDType()
 		    && exprArrayp->declRange().elements() != modArrayp->declRange().elements()) {
 		    int exprSize = exprArrayp->declRange().elements();
 		    int modSize = modArrayp->declRange().elements();
@@ -2209,7 +2209,7 @@ private:
 		// We've resolved parameters and hit a module that we couldn't resolve.  It's
 		// finally time to report it.
 		// Note only here in V3Width as this is first visitor after V3Dead.
-        nodep->v3warn(IGNMOD, "Cannot find file containing module: "<<nodep->modName());
+        nodep->v3warn(IGNMOD, "Ignore module: "<<nodep->modName()); // by Kris, for --lint-only
 		/*nodep->v3error("Cannot find file containing module: "<<nodep->modName());
 		v3Global.opt.filePathLookedMsg(nodep->fileline(), nodep->modName());*/
 	    }
@@ -3554,7 +3554,7 @@ private:
 	}
 	return patmap;
     }
-    
+
 
     //----------------------------------------------------------------------
     // METHODS - special type detection
@@ -3598,7 +3598,7 @@ private:
 	}
 	m_vup = saveVup;
     }
-    void userIterateAndNext(AstNode* nodep, WidthVP* vup) {	
+    void userIterateAndNext(AstNode* nodep, WidthVP* vup) {
 	if (!nodep) return;
 	WidthVP* saveVup = m_vup;
 	{
