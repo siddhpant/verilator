@@ -267,6 +267,13 @@ private:
 
     // VISITORS
     virtual void visit(AstVar* nodep) {
+
+    	bool pass = false; // by Kris
+    	if (v3Global.opt.lintOnly() && FileLine::m_ignunused.find(nodep->name()) != FileLine::m_ignunused.end()) {
+    		nodep->v3warn(IGNUNUSED, "Signal is unused. it is connected to NOTFOUNDMODULE: "<<nodep->prettyName());
+    		pass = true;
+    	}
+
 	for (int usr=1; usr<(m_alwaysp?3:2); ++usr) {
 	    UndrivenVarEntry* entryp = getEntryp (nodep, usr);
 	    if (nodep->isInput()
@@ -279,6 +286,10 @@ private:
 		|| nodep->isSigUserRdPublic()
 		|| (m_taskp && (m_taskp->dpiImport() || m_taskp->dpiExport()))) {
 		entryp->usedWhole();
+	    }
+	    if (pass) { // by Kris
+	    	entryp->drivenWhole();
+	    	entryp->usedWhole();
 	    }
 	}
 	// Discover variables used in bit definitions, etc
