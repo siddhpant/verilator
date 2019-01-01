@@ -7,14 +7,13 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-compile (
-	 v_flags2 => ["--lint-only"],
-	 fails=>1,
-	 expect=>
-'%Error: t/t_assert_dup_bad.v:\d+: Duplicate declaration of block: covlabel
-%Error: t/t_assert_dup_bad.v:\d+: ... Location of original declaration
-%Error: Exiting due to.*',
-	 );
+scenarios(simulator => 1);
+
+compile(
+    v_flags2 => ["--lint-only"],
+    fails => 1,
+    expect_filename => $Self->{golden_filename},
+    );
 
 ok(1);
 1;

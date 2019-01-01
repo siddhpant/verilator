@@ -1,4 +1,7 @@
+\#*
+.#*
 *~
+*.tidy
 *.old
 *.gz
 *.gz.uu
@@ -20,8 +23,11 @@ configure
 dddrun*
 doxygen-doc
 gdbrun*
+gmon.out
+ncverilog.history
 internals.txt
 verilator.txt
 verilator_bin*
 verilator_coverage_bin*
 verilator.pc
+**/obj_dir/*

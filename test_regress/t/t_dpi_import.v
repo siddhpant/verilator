@@ -7,9 +7,11 @@
 
 `ifdef VCS
  `define NO_SHORTREAL
+ `define NO_TIME
 `endif
 `ifdef NC
  `define NO_SHORTREAL
+ `define NO_TIME
 `endif
 `ifdef VERILATOR  // Unsupported
  `define NO_SHORTREAL
@@ -20,6 +22,9 @@ module t (/*AUTOARG*/
    clk
    );
    input clk;
+
+   typedef struct packed { bit [47:0] lo; bit [47:0] hi; } str_t;
+   typedef struct packed { int a; int b; } substr_t;
 
    // Allowed import return types:
    //         void, byte, shortint, int, longint, real, shortreal, chandle, and string
@@ -53,8 +58,10 @@ module t (/*AUTOARG*/
    import "DPI-C" pure function void dpii_v_byte     (input byte      i, output byte      o);
    import "DPI-C" pure function void dpii_v_shortint (input shortint  i, output shortint  o);
    import "DPI-C" pure function void dpii_v_longint  (input longint   i, output longint   o);
+   import "DPI-C" pure function void dpii_v_struct   (input str_t     i, output str_t     o);
+   import "DPI-C" pure function void dpii_v_substruct(input substr_t  i, output int       o);
    import "DPI-C" pure function void dpii_v_chandle  (input chandle   i, output chandle   o);
-   import "DPI-C" pure function void dpii_v_string   (input string    i, output string    o);
+   import "DPI-C" pure function void dpii_v_string   (input string    i, inout  string    o);
    import "DPI-C" pure function void dpii_v_real     (input real      i, output real      o);
 
    import "DPI-C" pure function void dpii_v_uint     (input int unsigned i,      output int unsigned o);
@@ -66,6 +73,14 @@ module t (/*AUTOARG*/
    import "DPI-C" pure function void dpii_v_bit64    (input bit [64-1:0] i, output bit [64-1:0] o);
    import "DPI-C" pure function void dpii_v_bit95    (input bit [95-1:0] i, output bit [95-1:0] o);
    import "DPI-C" pure function void dpii_v_bit96    (input bit [96-1:0] i, output bit [96-1:0] o);
+
+   import "DPI-C" pure function void dpii_v_reg      (input reg i, output reg o);
+   import "DPI-C" pure function void dpii_v_reg15    (input reg [14:0] i, output reg [14:0] o);
+   import "DPI-C" pure function void dpii_v_reg95    (input reg [94:0] i, output reg [94:0] o);
+   import "DPI-C" pure function void dpii_v_integer  (input integer   i, output integer   o);
+`ifndef NO_TIME
+   import "DPI-C" pure function void dpii_v_time     (input time      i, output time      o);
+`endif
 
    import "DPI-C" pure function int dpii_f_strlen (input string i);
 
@@ -96,6 +111,9 @@ module t (/*AUTOARG*/
    byte		i_y,	o_y;
    shortint	i_s,	o_s;
    longint	i_l,	o_l;
+   str_t        i_t,    o_t;
+   substr_t     i_ss;
+   int 		o_ss;
    int unsigned		i_iu,	o_iu;
    shortint unsigned	i_su,	o_su;
    longint unsigned	i_lu,	o_lu;
@@ -107,6 +125,12 @@ module t (/*AUTOARG*/
 `ifndef NO_SHORTREAL
    shortreal 	i_f,	o_f;
 `endif
+
+   reg          i_r, o_r;
+   reg [14:0]   i_r15, o_r15;
+   reg [94:0]   i_r95, o_r95;
+   integer      i_in,   o_in;
+   time         i_tm,   o_tm;
 
    bit [94:0] wide;
 
@@ -133,10 +157,21 @@ module t (/*AUTOARG*/
       i_su= {1'b1,wide[16-2:0]};
       i_l = {1'b1,wide[64-2:0]};
       i_lu= {1'b1,wide[64-2:0]};
+      i_t = {1'b1,wide[95-1:0]};
       i_d = 32.1;
+
+      i_ss.a = 32'h054321ab;
+      i_ss.b = 32'h05a43b21;
+
 `ifndef NO_SHORTREAL
       i_f = 30.2;
 `endif
+
+      i_r = '0;
+      i_r15 = wide[14:0];
+      i_r95 = wide[94:0];
+      i_in = -1234;
+      i_tm = 62;
 
       if (dpii_f_bit     (i_b) !== ~i_b) $stop;
       if (dpii_f_bit8    (i_b8) !== ~i_b8) $stop;
@@ -173,6 +208,8 @@ module t (/*AUTOARG*/
       dpii_v_uint     (i_iu,o_iu); if (o_iu !== ~i_iu) $stop;
       dpii_v_ushort   (i_su,o_su); if (o_su !== ~i_su) $stop;
       dpii_v_ulong    (i_lu,o_lu); if (o_lu !== ~i_lu) $stop;
+      dpii_v_struct   (i_t,o_t); if (o_t !== ~i_t) $stop;
+      dpii_v_substruct(i_ss,o_ss); if (o_ss !== i_ss.a - i_ss.b) $stop;
       dpii_v_chandle  (i_c,o_c); if (o_c !== i_c) $stop;
       dpii_v_string   (i_n,o_n); if (o_n != i_n) $stop;
       dpii_v_real     (i_d,o_d); if (o_d != i_d+1.5) $stop;
@@ -182,6 +219,14 @@ module t (/*AUTOARG*/
       dpii_v_bit64    (i_b64,o_b64); if (o_b64 !== ~i_b64) $stop;
       dpii_v_bit95    (i_b95,o_b95); if (o_b95 !== ~i_b95) $stop;
       dpii_v_bit96    (i_b96,o_b96); if (o_b96 !== ~i_b96) $stop;
+
+      dpii_v_reg      (i_r,o_r); if (o_r !== ~i_r) $stop;
+      dpii_v_reg15    (i_r15,o_r15); if (o_r15 !== ~i_r15) $stop;
+      dpii_v_reg95    (i_r95,o_r95); if (o_r95 !== ~i_r95) $stop;
+      dpii_v_integer  (i_in,o_in); if (o_in != ~i_in) $stop;
+`ifndef NO_TIME
+      dpii_v_time     (i_tm,o_tm); if (o_tm != ~i_tm) $stop;
+`endif
 
       if (dpii_f_strlen ("")!=0) $stop;
       if (dpii_f_strlen ("s")!=1) $stop;

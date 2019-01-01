@@ -7,11 +7,13 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-compile (
+scenarios(simulator => 1);
+
+compile(
     v_flags2 => ["--lint-only"],
-    fails=>$Self->{v3},
-    expect=>
-'%Error: t/t_dpi_exp_bad.v:\d+: DPI functions cannot return > 32 bits; use a two-state type or task instead: dpix_f_bit48__Vfuncrtn
+    fails => $Self->{vlt_all},
+    expect =>
+'%Error: t/t_dpi_exp_bad.v:\d+: DPI functions cannot return > 32 bits or four-state; use a two-state type or task instead: dpix_f_bit48__Vfuncrtn
 %Error: Exiting due to .*'
     );
 

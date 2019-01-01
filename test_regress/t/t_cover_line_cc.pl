@@ -7,25 +7,27 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
+scenarios(simulator => 1);
+
 top_filename("t/t_cover_line.v");
 
-compile (
-	 verilator_flags2 => ['--cc --coverage-line'],
-	 );
+compile(
+    verilator_flags2 => ['--cc --coverage-line'],
+    );
 
-execute (
-	 check_finished=>1,
-	 );
+execute(
+    check_finished => 1,
+    );
 
 # Read the input .v file and do any CHECK_COVER requests
 inline_checks();
 
-$Self->_run(cmd=>["../bin/verilator_coverage",
-		  "--annotate", "$Self->{obj_dir}/annotated",
-		  "$Self->{obj_dir}/coverage.dat",
-	    ],
-    );
+run(cmd => ["../bin/verilator_coverage",
+            "--annotate", "$Self->{obj_dir}/annotated",
+            "$Self->{obj_dir}/coverage.dat",
+    ]);
 
-ok(files_identical("$Self->{obj_dir}/annotated/t_cover_line.v", "t/t_cover_line.out"));
+files_identical("$Self->{obj_dir}/annotated/t_cover_line.v", "t/t_cover_line.out");
 
+ok(1);
 1;

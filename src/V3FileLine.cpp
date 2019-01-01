@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -18,10 +18,9 @@
 //
 //*************************************************************************
 
-#include <cstdio>
-#include <cstdarg>
-#include <cstring>
-#include <set>
+#include "config_build.h"
+#include "verilatedos.h"
+
 #include "V3Error.h"
 #include "V3FileLine.h"
 #ifndef _V3ERROR_NO_GLOBAL_
@@ -31,23 +30,26 @@
 # include "V3Config.h"
 #endif
 
+#include <cstdarg>
+#include VL_INCLUDE_UNORDERED_SET
+
 // by Kris
-set<int> FileLine::m_igndef;
+std::set<int> FileLine::m_igndef;
 bool FileLine::m_ignmod;
-set<string> FileLine::m_ignunused;
+std::set<string> FileLine::m_ignunused;
 
 //######################################################################
 // FileLineSingleton class functions
 
-const string FileLineSingleton::filenameLetters(int no) {
+const string FileLineSingleton::filenameLetters(int fileno) {
     const int size = 1 + (64 / 4);  // Each letter retires more than 4 bits of a > 64 bit number
     char out[size];
     char* op = out+size-1;
     *--op = '\0';  // We build backwards
-    int num = no;
+    int num = fileno;
     do {
-	*--op = 'a'+num%26;
-	num /= 26;
+        *--op = 'a'+num%26;
+        num /= 26;
     } while (num);
     return op;
 }
@@ -73,7 +75,7 @@ int FileLineSingleton::nameToNumber(const string& filename) {
 //! Support XML output
 
 //! Experimental. Updated to also put out the language.
-void FileLineSingleton::fileNameNumMapDumpXml(ostream& os) {
+void FileLineSingleton::fileNameNumMapDumpXml(std::ostream& os) {
     os<<"<files>\n";
     for (FileNameNumMap::const_iterator it = m_namemap.begin(); it != m_namemap.end(); ++it) {
 	os<<"<file id=\""<<filenameLetters(it->second)
@@ -93,15 +95,15 @@ FileLine::FileLine(FileLine::EmptySecret) {
 
     m_warnOn=0;
     for (int codei=V3ErrorCode::EC_MIN; codei<V3ErrorCode::_ENUM_MAX; codei++) {
-	V3ErrorCode code = (V3ErrorCode)codei;
-	warnOff(code, code.defaultsOff());
+        V3ErrorCode code = V3ErrorCode(codei);
+        warnOff(code, code.defaultsOff());
     }
 }
 
 string FileLine::lineDirectiveStrg(int enterExit) const {
     char numbuf[20]; sprintf(numbuf, "%d", lineno());
     char levelbuf[20]; sprintf(levelbuf, "%d", enterExit);
-    return ((string)"`line "+numbuf+" \""+filename()+"\" "+levelbuf+"\n");
+    return (string("`line ")+numbuf+" \""+filename()+"\" "+levelbuf+"\n");
 }
 
 void FileLine::lineDirective(const char* textp, int& enterExitRef) {
@@ -156,7 +158,7 @@ FileLine* FileLine::copyOrSameFileLine() {
 const string FileLine::filebasename() const {
     string name = filename();
     string::size_type pos;
-    if ((pos = name.rfind("/")) != string::npos) {
+    if ((pos = name.rfind('/')) != string::npos) {
 	name.erase(0,pos+1);
     }
     return name;
@@ -165,7 +167,7 @@ const string FileLine::filebasename() const {
 const string FileLine::filebasenameNoExt() const {
     string name = filebasename();
     string::size_type pos;
-    if ((pos = name.find(".")) != string::npos) {
+    if ((pos = name.find('.')) != string::npos) {
 	name = name.substr(0,pos);
     }
     return name;
@@ -186,8 +188,8 @@ const string FileLine::profileFuncname() const {
 string FileLine::ascii() const {
     return filename()+":"+cvtToStr(lineno());
 }
-ostream& operator<<(ostream& os, FileLine* fileline) {
-    os <<fileline->ascii()<<": "<<hex;
+std::ostream& operator<<(std::ostream& os, FileLine* fileline) {
+    os <<fileline->ascii()<<": "<<std::hex;
     return(os);
 }
 
@@ -208,15 +210,15 @@ bool FileLine::warnOff(const string& msg, bool flag) {
 
 void FileLine::warnLintOff(bool flag) {
     for (int codei=V3ErrorCode::EC_MIN; codei<V3ErrorCode::_ENUM_MAX; codei++) {
-	V3ErrorCode code = (V3ErrorCode)codei;
-	if (code.lintError()) warnOff(code, flag);
+        V3ErrorCode code = V3ErrorCode(codei);
+        if (code.lintError()) warnOff(code, flag);
     }
 }
 
 void FileLine::warnStyleOff(bool flag) {
     for (int codei=V3ErrorCode::EC_MIN; codei<V3ErrorCode::_ENUM_MAX; codei++) {
-	V3ErrorCode code = (V3ErrorCode)codei;
-	if (code.styleError()) warnOff(code, flag);
+        V3ErrorCode code = V3ErrorCode(codei);
+        if (code.styleError()) warnOff(code, flag);
     }
 }
 
@@ -232,29 +234,25 @@ bool FileLine::warnIsOff(V3ErrorCode code) const {
 void FileLine::modifyStateInherit(const FileLine* fromp) {
     // Any warnings that are off in "from", become off in "this".
     for (int codei=V3ErrorCode::EC_MIN; codei<V3ErrorCode::_ENUM_MAX; codei++) {
-	V3ErrorCode code = (V3ErrorCode)codei;
-	if (fromp->warnIsOff(code)) {
-	    warnOff(code, true);
-	}
+        V3ErrorCode code = V3ErrorCode(codei);
+        if (fromp->warnIsOff(code)) { warnOff(code, true); }
     }
 }
 
-void FileLine::v3errorEnd(ostringstream& str) {
+void FileLine::v3errorEnd(std::ostringstream& str) {
+    std::ostringstream nsstr;
     if (m_lineno) {
-	ostringstream nsstr;
-    // by Kris, to indicate the same line as preproc error's
-    if (v3Global.opt.lintOnly()) {
-        if (m_igndef.find(m_lineno) != m_igndef.end()) {
-            string _str = str.str();
-            _str.insert(0, "[IGNDEF] ");
-            nsstr<<this<<_str;
+        // by Kris, to indicate the same line as preproc error's
+        if (v3Global.opt.lintOnly()) {
+            if (m_igndef.find(m_lineno) != m_igndef.end()) {
+                string _str = str.str();
+                _str.insert(0, "[IGNDEF] ");
+                nsstr<<this<<_str;
+            } else nsstr<<this<<str.str();
         } else nsstr<<this<<str.str();
-    } else nsstr<<this<<str.str();
-	if (warnIsOff(V3Error::errorCode())) V3Error::suppressThisWarning();
-	V3Error::v3errorEnd(nsstr);
-    } else {
-	V3Error::v3errorEnd(str);
-    }
+    } else nsstr<<str.str();
+    if (warnIsOff(V3Error::errorCode())) V3Error::suppressThisWarning();
+    V3Error::v3errorEnd(nsstr);
 }
 
 string FileLine::warnMore() const {
@@ -266,7 +264,7 @@ string FileLine::warnMore() const {
 }
 
 #ifdef VL_LEAK_CHECKS
-typedef set<FileLine*> FileLineCheckSet;
+typedef vl_unordered_set<FileLine*> FileLineCheckSet;
 FileLineCheckSet fileLineLeakChecks;
 
 void* FileLine::operator new(size_t size) {

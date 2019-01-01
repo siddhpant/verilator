@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -27,17 +27,16 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <cmath>
-#include <deque>
 
 #include "V3Global.h"
 #include "V3Table.h"
 #include "V3Simulate.h"
 #include "V3Stats.h"
 #include "V3Ast.h"
+
+#include <cmath>
+#include <cstdarg>
+#include <deque>
 
 //######################################################################
 // Table class functions
@@ -81,7 +80,7 @@ private:
     //  State cleared on each module
     AstNodeModule*	m_modp;		// Current MODULE
     int			m_modTables;	// Number of tables created in this module
-    deque<AstVarScope*> m_modTableVscs;	// All tables created
+    std::deque<AstVarScope*> m_modTableVscs;  // All tables created
 
     //  State cleared on each scope
     AstScope*	m_scopep;		// Current SCOPE
@@ -90,19 +89,15 @@ private:
     bool	m_assignDly;		// Consists of delayed assignments instead of normal assignments
     int		m_inWidth;		// Input table width
     int		m_outWidth;		// Output table width
-    deque<AstVarScope*> m_inVarps;	// Input variable list
-    deque<AstVarScope*> m_outVarps;	// Output variable list
-    deque<bool>    m_outNotSet;		// True if output variable is not set at some point
+    std::deque<AstVarScope*> m_inVarps; // Input variable list
+    std::deque<AstVarScope*> m_outVarps;        // Output variable list
+    std::deque<bool>    m_outNotSet;            // True if output variable is not set at some point
 
     // When creating a table
-    deque<AstVarScope*> m_tableVarps;	// Table being created
+    std::deque<AstVarScope*> m_tableVarps;      // Table being created
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     bool treeTest(AstAlways* nodep) {
 	// Process alw/assign tree
@@ -124,8 +119,8 @@ private:
 	// Calc data storage in bytes
 	size_t chgWidth = m_outVarps.size();	// Width of one change-it-vector
 	if (chgWidth<8) chgWidth = 8;
-	double space = (pow((double)2,((double)(m_inWidth)))
-			*(double)(m_outWidth+chgWidth));
+        double space = (pow(static_cast<double>(2.0), static_cast<double>(m_inWidth))
+                        * static_cast<double>(m_outWidth + chgWidth));
 	// Instruction count bytes (ok, it's space also not time :)
 	double bytesPerInst = 4;
 	double time  = (chkvis.instrCount()*bytesPerInst + chkvis.dataCount()) + 1;  // +1 so won't div by zero
@@ -179,29 +174,29 @@ private:
 	++m_statTablesCre;
 
 	// Index into our table
-	AstVar* indexVarp = new AstVar (nodep->fileline(), AstVarType::BLOCKTEMP,
-					"__Vtableidx" + cvtToStr(m_modTables),
-					VFlagBitPacked(), m_inWidth);
+        AstVar* indexVarp = new AstVar(nodep->fileline(), AstVarType::BLOCKTEMP,
+                                       "__Vtableidx" + cvtToStr(m_modTables),
+                                       VFlagBitPacked(), m_inWidth);
 	m_modp->addStmtp(indexVarp);
-	AstVarScope* indexVscp = new AstVarScope (indexVarp->fileline(), m_scopep, indexVarp);
+        AstVarScope* indexVscp = new AstVarScope(indexVarp->fileline(), m_scopep, indexVarp);
 	m_scopep->addVarp(indexVscp);
 
 	// Change it variable
 	FileLine* fl = nodep->fileline();
 	AstNodeArrayDType* dtypep
-	    = new AstUnpackArrayDType (fl,
-				       nodep->findBitDType(m_outVarps.size(),
-							   m_outVarps.size(), AstNumeric::UNSIGNED),
-				       new AstRange (fl, VL_MASK_I(m_inWidth), 0));
+            = new AstUnpackArrayDType(fl,
+                                      nodep->findBitDType(m_outVarps.size(),
+                                                          m_outVarps.size(), AstNumeric::UNSIGNED),
+                                      new AstRange(fl, VL_MASK_I(m_inWidth), 0));
 	v3Global.rootp()->typeTablep()->addTypesp(dtypep);
 	AstVar* chgVarp
-	    = new AstVar (fl, AstVarType::MODULETEMP,
-			  "__Vtablechg" + cvtToStr(m_modTables),
-			  dtypep);
+            = new AstVar(fl, AstVarType::MODULETEMP,
+                         "__Vtablechg" + cvtToStr(m_modTables),
+                         dtypep);
 	chgVarp->isConst(true);
-	chgVarp->valuep(new AstInitArray (nodep->fileline(), dtypep, NULL));
+        chgVarp->valuep(new AstInitArray(nodep->fileline(), dtypep, NULL));
 	m_modp->addStmtp(chgVarp);
-	AstVarScope* chgVscp = new AstVarScope (chgVarp->fileline(), m_scopep, chgVarp);
+        AstVarScope* chgVscp = new AstVarScope(chgVarp->fileline(), m_scopep, chgVarp);
 	m_scopep->addVarp(chgVscp);
 
 	createTableVars(nodep);
@@ -210,14 +205,14 @@ private:
 
 	// Collapse duplicate tables
 	chgVscp = findDuplicateTable(chgVscp);
-	for (deque<AstVarScope*>::iterator it = m_tableVarps.begin(); it!=m_tableVarps.end(); ++it) {
+        for (std::deque<AstVarScope*>::iterator it = m_tableVarps.begin(); it!=m_tableVarps.end(); ++it) {
 	    *it = findDuplicateTable(*it);
 	}
 
 	createOutputAssigns(nodep, stmtsp, indexVscp, chgVscp);
 
 	// Link it in.
-	if (AstAlways* nodeap = nodep->castAlways()) {
+        if (AstAlways* nodeap = VN_CAST(nodep, Always)) {
 	    // Keep sensitivity list, but delete all else
 	    nodeap->bodysp()->unlinkFrBackWithNext()->deleteTree();
 	    nodeap->addStmtp(stmtsp);
@@ -232,21 +227,21 @@ private:
 
     void createTableVars(AstNode* nodep) {
 	// Create table for each output
-	for (deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
+        for (std::deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
 	    AstVarScope* outvscp = *it;
 	    AstVar* outvarp = outvscp->varp();
 	    FileLine* fl = nodep->fileline();
 	    AstNodeArrayDType* dtypep
-		= new AstUnpackArrayDType (fl, outvarp->dtypep(),
-					   new AstRange (fl, VL_MASK_I(m_inWidth), 0));
+                = new AstUnpackArrayDType(fl, outvarp->dtypep(),
+                                          new AstRange(fl, VL_MASK_I(m_inWidth), 0));
 	    v3Global.rootp()->typeTablep()->addTypesp(dtypep);
 	    AstVar* tablevarp
-		= new AstVar (fl, AstVarType::MODULETEMP,
-			      "__Vtable" + cvtToStr(m_modTables) +"_"+outvarp->name(),
-			      dtypep);
+                = new AstVar(fl, AstVarType::MODULETEMP,
+                             "__Vtable" + cvtToStr(m_modTables) +"_"+outvarp->name(),
+                             dtypep);
 	    tablevarp->isConst(true);
 	    tablevarp->isStatic(true);
-	    tablevarp->valuep(new AstInitArray (nodep->fileline(), dtypep, NULL));
+            tablevarp->valuep(new AstInitArray(nodep->fileline(), dtypep, NULL));
 	    m_modp->addStmtp(tablevarp);
 	    AstVarScope* tablevscp = new AstVarScope(tablevarp->fileline(), m_scopep, tablevarp);
 	    m_scopep->addVarp(tablevscp);
@@ -258,17 +253,17 @@ private:
 	// Concat inputs into a single temp variable (inside always)
 	// First var in inVars becomes the LSB of the concat
 	AstNode* concatp = NULL;
-	for (deque<AstVarScope*>::iterator it = m_inVarps.begin(); it!=m_inVarps.end(); ++it) {
+        for (std::deque<AstVarScope*>::iterator it = m_inVarps.begin(); it!=m_inVarps.end(); ++it) {
 	    AstVarScope* invscp = *it;
-	    AstVarRef* refp = new AstVarRef (nodep->fileline(), invscp, false);
+            AstVarRef* refp = new AstVarRef(nodep->fileline(), invscp, false);
 	    if (concatp) {
-		concatp = new AstConcat (nodep->fileline(), refp, concatp);
+                concatp = new AstConcat(nodep->fileline(), refp, concatp);
 	    } else concatp = refp;
 	}
 
 	AstNode* stmtsp = new AstAssign
 	    (nodep->fileline(),
-	     new AstVarRef (nodep->fileline(), indexVscp, true),
+             new AstVarRef(nodep->fileline(), indexVscp, true),
 	     concatp);
 	return stmtsp;
     }
@@ -278,14 +273,14 @@ private:
 	// There may be a simulation path by which the output doesn't change value.
 	// We could bail on these cases, or we can have a "change it" boolean.
 	// We've choosen the later route, since recirc is common in large FSMs.
-	for (deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
+        for (std::deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
 	    m_outNotSet.push_back(false);
 	}
 	uint32_t inValueNextInitArray=0;
 	TableSimulateVisitor simvis (this);
 	for (uint32_t inValue=0; inValue <= VL_MASK_I(m_inWidth); inValue++) {
 	    // Make a new simulation structure so we can set new input values
-	    UINFO(8," Simulating "<<hex<<inValue<<endl);
+            UINFO(8," Simulating "<<std::hex<<inValue<<endl);
 
 	    // Above simulateVisitor clears user 3, so
 	    // all outputs default to NULL to mean 'recirculating'.
@@ -293,10 +288,12 @@ private:
 
 	    // Set all inputs to the constant
 	    uint32_t shift = 0;
-	    for (deque<AstVarScope*>::iterator it = m_inVarps.begin(); it!=m_inVarps.end(); ++it) {
+            for (std::deque<AstVarScope*>::iterator it = m_inVarps.begin(); it!=m_inVarps.end(); ++it) {
 		AstVarScope* invscp = *it;
 		// LSB is first variable, so extract it that way
-		simvis.newNumber(invscp, VL_MASK_I(invscp->width()) & (inValue>>shift));
+                simvis.newNumber(invscp,
+                                 V3Number(invscp->fileline(), invscp->width(),
+                                          VL_MASK_I(invscp->width()) & (inValue>>shift)));
 		shift += invscp->width();
 		// We're just using32 bit arithmetic, because there's no way the input table can be 2^32 bytes!
 		if (shift>31) nodep->v3fatalSrc("shift overflow");
@@ -305,12 +302,15 @@ private:
 
 	    // Simulate
 	    simvis.mainTableEmulate(nodep);
-	    if (!simvis.optimizable()) simvis.whyNotNodep()->v3fatalSrc("Optimizable cleared, even though earlier test run said not: "<<simvis.whyNotMessage());
+            if (!simvis.optimizable()) {
+                simvis.whyNotNodep()->v3fatalSrc("Optimizable cleared, even though earlier test run said not: "
+                                                 <<simvis.whyNotMessage());
+            }
 
 	    // If a output changed, add it to table
 	    int outnum = 0;
 	    V3Number outputChgMask (nodep->fileline(), m_outVarps.size(), 0);
-	    for (deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
+            for (std::deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
 		AstVarScope* outvscp = *it;
 		V3Number* outnump = simvis.fetchOutNumberNull(outvscp);
 		AstNode* setp;
@@ -318,25 +318,25 @@ private:
 		    UINFO(8,"   Output "<<outvscp->name()<<" never set\n");
 		    m_outNotSet[outnum] = true;
 		    // Value in table is arbitrary, but we need something
-		    setp = new AstConst (outvscp->fileline(),
-					 V3Number(outvscp->fileline(), outvscp->width(), 0));
+                    setp = new AstConst(outvscp->fileline(),
+                                        V3Number(outvscp->fileline(), outvscp->width(), 0));
 		} else {
 		    UINFO(8,"   Output "<<outvscp->name()<<" = "<<*outnump<<endl);
 		    //  m_tableVarps[inValue] = num;
 		    // Mark changed bit, too
 		    outputChgMask.setBit(outnum, 1);
-		    setp = new AstConst (outnump->fileline(), *outnump);
+                    setp = new AstConst(outnump->fileline(), *outnump);
 		}
 		// Note InitArray requires us to have the values in inValue order
-		m_tableVarps[outnum]->varp()->valuep()->castInitArray()->addValuep(setp);
+                VN_CAST(m_tableVarps[outnum]->varp()->valuep(), InitArray)->addValuep(setp);
 		outnum++;
 	    }
 
 	    {   // Set changed table
 		if (inValue != inValueNextInitArray++)
 		    nodep->v3fatalSrc("InitArray requires us to have the values in inValue order");
-		AstNode* setp = new AstConst (nodep->fileline(), outputChgMask);
-		chgVscp->varp()->valuep()->castInitArray()->addValuep(setp);
+                AstNode* setp = new AstConst(nodep->fileline(), outputChgMask);
+                VN_CAST(chgVscp->varp()->valuep(), InitArray)->addValuep(setp);
 	    }
 	} // each value
     }
@@ -345,14 +345,14 @@ private:
 	// See if another table we've created is identical, if so use it for both.
 	// (A more 'modern' way would be to instead use V3Hashed::findDuplicate)
 	AstVar* var1p = vsc1p->varp();
-	for (deque<AstVarScope*>::iterator it = m_modTableVscs.begin(); it!=m_modTableVscs.end(); ++it) {
+        for (std::deque<AstVarScope*>::iterator it = m_modTableVscs.begin(); it!=m_modTableVscs.end(); ++it) {
 	    AstVarScope* vsc2p= *it;
 	    AstVar* var2p = vsc2p->varp();
 	    if (var1p->width() == var2p->width()
 		&& (var1p->dtypep()->arrayUnpackedElements()
 		    == var2p->dtypep()->arrayUnpackedElements())) {
-		AstNode* init1p = var1p->valuep()->castInitArray();
-		AstNode* init2p = var2p->valuep()->castInitArray();
+                const AstNode* init1p = VN_CAST(var1p->valuep(), InitArray);
+                const AstNode* init2p = VN_CAST(var2p->valuep(), InitArray);
 		if (init1p->sameGateTree(init2p)) {
 		    UINFO(8,"   Duplicate table var "<<vsc2p<<" == "<<vsc1p<<endl);
 		    vsc1p->unlinkFrBack()->deleteTree();
@@ -371,28 +371,29 @@ private:
 	// elimination will remove it for us.
 	// Set each output from array ref into our table
 	int outnum = 0;
-	for (deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
+        for (std::deque<AstVarScope*>::iterator it = m_outVarps.begin(); it!=m_outVarps.end(); ++it) {
 	    AstVarScope* outvscp = *it;
 	    AstNode* alhsp = new AstVarRef(nodep->fileline(), outvscp, true);
 	    AstNode* arhsp = new AstArraySel(nodep->fileline(),
 					     new AstVarRef(nodep->fileline(), m_tableVarps[outnum], false),
 					     new AstVarRef(nodep->fileline(), indexVscp, false));
-	    AstNode* outasnp = (m_assignDly
-				? (AstNode*)(new AstAssignDly (nodep->fileline(), alhsp, arhsp))
-				: (AstNode*)(new AstAssign (nodep->fileline(), alhsp, arhsp)));
+            AstNode* outasnp
+                = (m_assignDly
+                   ? static_cast<AstNode*>(new AstAssignDly(nodep->fileline(), alhsp, arhsp))
+                   : static_cast<AstNode*>(new AstAssign(nodep->fileline(), alhsp, arhsp)));
 	    AstNode* outsetp = outasnp;
 
 	    // Is the value set in only some branches of the table?
 	    if (m_outNotSet[outnum]) {
 		V3Number outputChgMask (nodep->fileline(), m_outVarps.size(), 0);
 		outputChgMask.setBit(outnum,1);
-		outsetp = new AstIf (nodep->fileline(),
-				     new AstAnd(nodep->fileline(),
-						new AstArraySel(nodep->fileline(),
-								new AstVarRef(nodep->fileline(), chgVscp, false),
-								new AstVarRef(nodep->fileline(), indexVscp, false)),
-						new AstConst(nodep->fileline(), outputChgMask)),
-				     outsetp, NULL);
+                outsetp = new AstIf(nodep->fileline(),
+                                    new AstAnd(nodep->fileline(),
+                                               new AstArraySel(nodep->fileline(),
+                                                               new AstVarRef(nodep->fileline(), chgVscp, false),
+                                                               new AstVarRef(nodep->fileline(), indexVscp, false)),
+                                               new AstConst(nodep->fileline(), outputChgMask)),
+                                    outsetp, NULL);
 	    }
 
 	    stmtsp->addNext(outsetp);
@@ -403,19 +404,19 @@ private:
 
     // VISITORS
     virtual void visit(AstNetlist* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstNodeModule* nodep) {
 	m_modTables = 0;
 	m_modTableVscs.clear();
 	m_modp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     virtual void visit(AstScope* nodep) {
 	UINFO(4," SCOPE "<<nodep<<endl);
 	m_scopep = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_scopep = NULL;
     }
     virtual void visit(AstAlways* nodep) {
@@ -433,7 +434,7 @@ private:
     }
     // default
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTRUCTORS
@@ -445,7 +446,7 @@ public:
 	m_inWidth = 0;
 	m_outWidth = 0;
 	m_totalBytes = 0;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~TableVisitor() {
 	V3Stats::addStat("Optimizations, Tables created", m_statTablesCre);
@@ -465,6 +466,8 @@ void TableSimulateVisitor::varRefCb(AstVarRef* nodep) {
 
 void V3Table::tableAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    TableVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("table.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        TableVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("table", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

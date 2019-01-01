@@ -46,6 +46,9 @@ using namespace std;
 
 unsigned int main_time = false;
 
+#define STRINGIFY(x) STRINGIFY2(x)
+#define STRINGIFY2(x) #x
+
 //======================================================================
 
 #define CHECK_RESULT_VH(got, exp) \
@@ -88,7 +91,7 @@ unsigned int main_time = false;
 
 static int _mon_check_props(TestVpiHandle& handle, int size, int direction, int scalar, int type) {
     s_vpi_value value = {
-      vpiIntVal
+	vpiIntVal, .value = {.integer = 0}
     };
     // check size of object
     int vpisize = vpi_get(vpiSize, handle);
@@ -153,20 +156,27 @@ struct params {
       unsigned int  scalar;
       int  type;
     } attributes, children;
-} values[] = {
-    {"onebit", {1, vpiNoDirection, 1, vpiReg}, {0, 0, 0, 0}},
-    {"twoone", {2, vpiNoDirection, 0, vpiReg}, {0, 0, 0, 0}},
-    {"onetwo", {2, vpiNoDirection, 0, TestSimulator::is_verilator() ? vpiReg : vpiMemory}, {0, 0, 0, 0}},
-    {"fourthreetwoone", {2, vpiNoDirection, 0, vpiMemory}, {2, vpiNoDirection, 0, vpiMemoryWord}},
-    {"clk", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
-    {"testin", {16, vpiInput, 0, vpiPort}, {0, 0, 0, 0}},
-    {"testout", {24, vpiOutput, 0, vpiPort}, {0, 0, 0, 0}},
-    {"sub.subin", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
-    {"sub.subout", {1, vpiOutput, 1, vpiPort}, {0, 0, 0, 0}},
-    {NULL, {0, 0, 0, 0}, {0, 0, 0, 0}}
 };
 
 int mon_check_props() {
+    // This table needs to be function-static.
+    // This avoids calling is_verilator() below at global-static init time.
+    // When global-static led to a race between the is_verilator call below, and
+    // the code that sets up the VerilatedAssertOneThread() check in
+    // verilated_vpi.cc, it was causing the check to falsely fail
+    // (due to m_threadid within the check not being initted yet.)
+    static struct params values[] = {
+        {"onebit", {1, vpiNoDirection, 1, vpiReg}, {0, 0, 0, 0}},
+        {"twoone", {2, vpiNoDirection, 0, vpiReg}, {0, 0, 0, 0}},
+        {"onetwo", {2, vpiNoDirection, 0, TestSimulator::is_verilator() ? vpiReg : vpiMemory}, {0, 0, 0, 0}},
+        {"fourthreetwoone", {2, vpiNoDirection, 0, vpiMemory}, {2, vpiNoDirection, 0, vpiMemoryWord}},
+        {"clk", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
+        {"testin", {16, vpiInput, 0, vpiPort}, {0, 0, 0, 0}},
+        {"testout", {24, vpiOutput, 0, vpiPort}, {0, 0, 0, 0}},
+        {"sub.subin", {1, vpiInput, 1, vpiPort}, {0, 0, 0, 0}},
+        {"sub.subout", {1, vpiOutput, 1, vpiPort}, {0, 0, 0, 0}},
+        {NULL, {0, 0, 0, 0}, {0, 0, 0, 0}}
+    };
     struct params* value = values;
     while (value->signal) {
       TestVpiHandle h = VPI_HANDLE(value->signal);
@@ -228,7 +238,7 @@ void (*vlog_startup_routines[])() = {
 };
 
 #else
-double sc_time_stamp () {
+double sc_time_stamp() {
     return main_time;
 }
 int main(int argc, char **argv, char **env) {
@@ -236,7 +246,7 @@ int main(int argc, char **argv, char **env) {
     Verilated::commandArgs(argc, argv);
     Verilated::debug(0);
 
-    VM_PREFIX* topp = new VM_PREFIX ("");  // Note null name - we're flattening it out
+    VM_PREFIX* topp = new VM_PREFIX("");  // Note null name - we're flattening it out
 
 #ifdef VERILATOR
 # ifdef TEST_VERBOSE
@@ -248,8 +258,8 @@ int main(int argc, char **argv, char **env) {
     Verilated::traceEverOn(true);
     VL_PRINTF("Enabling waves...\n");
     VerilatedVcdC* tfp = new VerilatedVcdC;
-    topp->trace (tfp, 99);
-    tfp->open ("obj_dir/t_vpi_var/simx.vcd");
+    topp->trace(tfp, 99);
+    tfp->open(STRINGIFY(TEST_OBJ_DIR) "/simx.vcd");
 #endif
 
     topp->eval();

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -29,17 +29,16 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <map>
-#include <vector>
 
 #include "V3Global.h"
 #include "V3Life.h"
 #include "V3Stats.h"
 #include "V3Ast.h"
 #include "V3Const.h"
+
+#include <cstdarg>
+#include <map>
+#include <vector>
 
 //######################################################################
 // Structure for global state
@@ -53,7 +52,7 @@ class LifeState {
 public:
     V3Double0	m_statAssnDel;	// Statistic tracking
     V3Double0	m_statAssnCon;	// Statistic tracking
-    vector<AstNode*>	m_unlinkps;
+    std::vector<AstNode*> m_unlinkps;
 
 public:
     // CONSTRUCTORS
@@ -61,7 +60,7 @@ public:
     ~LifeState() {
 	V3Stats::addStatSum("Optimizations, Lifetime assign deletions", m_statAssnDel);
 	V3Stats::addStatSum("Optimizations, Lifetime constant prop", m_statAssnCon);
-	for (vector<AstNode*>::iterator it = m_unlinkps.begin(); it != m_unlinkps.end(); ++it) {
+        for (std::vector<AstNode*>::iterator it = m_unlinkps.begin(); it != m_unlinkps.end(); ++it) {
 	    (*it)->unlinkFrBack();
 	    (*it)->deleteTree();
 	}
@@ -79,7 +78,7 @@ class LifeVarEntry {
     bool		m_setBeforeUse;	// First access was a set (and thus block above may have a set that can be deleted
     bool		m_everSet;	// Was ever assigned (and thus above block may not preserve constant propagation)
 
-    inline void init (bool setBeforeUse) {
+    inline void init(bool setBeforeUse) {
 	m_assignp = NULL;
 	m_constp = NULL;
 	m_setBeforeUse = setBeforeUse;
@@ -104,7 +103,7 @@ public:
 	m_assignp = assp;
 	m_constp = NULL;
 	m_everSet = true;
-	if (assp->rhsp()->castConst()) m_constp = assp->rhsp()->castConst();
+        if (VN_IS(assp->rhsp(), Const)) m_constp = VN_CAST(assp->rhsp(), Const);
     }
     inline void complexAssign() {  // A[x]=... or some complicated assignment
 	m_assignp = NULL;
@@ -135,11 +134,7 @@ class LifeBlock {
     LifeBlock*	m_aboveLifep;	// Upper life, or NULL
     LifeState*	m_statep;	// Current global state
 
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
 public:
     LifeBlock(LifeBlock* aboveLifep, LifeState* statep) {
@@ -189,7 +184,7 @@ public:
 	    m_map.insert(make_pair(nodep,LifeVarEntry(LifeVarEntry::COMPLEXASSIGN())));
 	}
     }
-    void varUsageReplace (AstVarScope* nodep, AstVarRef* varrefp) {
+    void varUsageReplace(AstVarScope* nodep, AstVarRef* varrefp) {
 	// Variable rvalue.  If it references a constant, we can simply replace it
 	LifeMap::iterator it = m_map.find(nodep);
 	if (it != m_map.end()) {
@@ -242,7 +237,7 @@ public:
 	    }
 	}
     }
-    void dualBranch (LifeBlock* life1p, LifeBlock* life2p) {
+    void dualBranch(LifeBlock* life1p, LifeBlock* life2p) {
 	// Find any common sets on both branches of IF and propagate upwards
 	//life1p->lifeDump();
 	//life2p->lifeDump();
@@ -288,6 +283,7 @@ private:
     LifeState*	m_statep;	// Current state
     bool	m_sideEffect;	// Side effects discovered in assign RHS
     bool	m_noopt;	// Disable optimization of variables in this block
+    bool	m_tracingCall;  // Iterating into a CCall to a CFunc
 
     // LIFE MAP
     //  For each basic block, we'll make a new map of what variables that if/else is changing
@@ -296,11 +292,7 @@ private:
     LifeBlock*	m_lifep;	// Current active lifetime map for current scope
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     // VISITORS
     virtual void visit(AstVarRef* nodep) {
@@ -321,47 +313,47 @@ private:
 	// Similar code in V3Dead
 	vluint64_t lastEdit = AstNode::editCountGbl();	// When it was last edited
 	m_sideEffect = false;
-	nodep->rhsp()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->rhsp());
 	if (lastEdit != AstNode::editCountGbl()) {
 	    // We changed something, try to constant propagate, but don't delete the
 	    // assignment as we still need nodep to remain.
 	    V3Const::constifyEdit(nodep->rhsp());  // rhsp may change
 	}
 	// Has to be direct assignment without any EXTRACTing.
-	if (nodep->lhsp()->castVarRef() && !m_sideEffect && !m_noopt) {
-	    AstVarScope* vscp = nodep->lhsp()->castVarRef()->varScopep();
+        if (VN_IS(nodep->lhsp(), VarRef) && !m_sideEffect && !m_noopt) {
+            AstVarScope* vscp = VN_CAST(nodep->lhsp(), VarRef)->varScopep();
 	    if (!vscp) nodep->v3fatalSrc("Scope lost on variable");
 	    m_lifep->simpleAssign(vscp, nodep);
 	} else {
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	}
     }
     virtual void visit(AstAssignDly* nodep) {
 	// Don't treat as normal assign; V3Life doesn't understand time sense
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
     //---- Track control flow changes
     virtual void visit(AstNodeIf* nodep) {
 	UINFO(4,"   IF "<<nodep<<endl);
 	// Condition is part of PREVIOUS block
-	nodep->condp()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->condp());
 	LifeBlock* prevLifep = m_lifep;
-	LifeBlock* ifLifep   = new LifeBlock (prevLifep, m_statep);
-	LifeBlock* elseLifep = new LifeBlock (prevLifep, m_statep);
+        LifeBlock* ifLifep   = new LifeBlock(prevLifep, m_statep);
+        LifeBlock* elseLifep = new LifeBlock(prevLifep, m_statep);
 	{
 	    m_lifep = ifLifep;
-	    nodep->ifsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->ifsp());
 	    m_lifep = prevLifep;
 	}
 	{
 	    m_lifep = elseLifep;
-	    nodep->elsesp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->elsesp());
 	    m_lifep = prevLifep;
 	}
 	UINFO(4,"   join "<<endl);
 	// Find sets on both flows
-	m_lifep->dualBranch (ifLifep, elseLifep);
+        m_lifep->dualBranch(ifLifep, elseLifep);
 	// For the next assignments, clear any variables that were read or written in the block
 	ifLifep->lifeToAbove();
 	elseLifep->lifeToAbove();
@@ -378,18 +370,18 @@ private:
 	// it as a IF statement, and just don't allow elimination of
 	// variables across the body.
 	LifeBlock* prevLifep = m_lifep;
-	LifeBlock* condLifep = new LifeBlock (prevLifep, m_statep);
-	LifeBlock* bodyLifep = new LifeBlock (prevLifep, m_statep);
+        LifeBlock* condLifep = new LifeBlock(prevLifep, m_statep);
+        LifeBlock* bodyLifep = new LifeBlock(prevLifep, m_statep);
 	{
 	    m_lifep = condLifep;
-	    nodep->precondsp()->iterateAndNext(*this);
-	    nodep->condp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->precondsp());
+            iterateAndNextNull(nodep->condp());
 	    m_lifep = prevLifep;
 	}
 	{
 	    m_lifep = bodyLifep;
-	    nodep->bodysp()->iterateAndNext(*this);
-	    nodep->incsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->bodysp());
+            iterateAndNextNull(nodep->incsp());
 	    m_lifep = prevLifep;
 	}
 	UINFO(4,"   joinfor"<<endl);
@@ -404,12 +396,12 @@ private:
 	// It's worse though as an IF(..., JUMPGO) may change the control flow.
 	// Just don't optimize blocks with labels; they're rare - so far.
 	LifeBlock* prevLifep = m_lifep;
-	LifeBlock* bodyLifep = new LifeBlock (prevLifep, m_statep);
+        LifeBlock* bodyLifep = new LifeBlock(prevLifep, m_statep);
 	bool prev_noopt = m_noopt;
 	{
 	    m_lifep = bodyLifep;
 	    m_noopt = true;
-	    nodep->stmtsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->stmtsp());
 	    m_lifep = prevLifep;
 	    m_noopt = prev_noopt;
 	}
@@ -420,31 +412,34 @@ private:
     }
     virtual void visit(AstCCall* nodep) {
 	//UINFO(4,"  CCALL "<<nodep<<endl);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	// Enter the function and trace it
 	if (!nodep->funcp()->entryPoint()) {  // else is non-inline or public function we optimize separately
-	    nodep->funcp()->accept(*this);
+            m_tracingCall = true;
+            iterate(nodep->funcp());
 	}
     }
     virtual void visit(AstCFunc* nodep) {
 	//UINFO(4,"  CCALL "<<nodep<<endl);
+        if (!m_tracingCall && !nodep->entryPoint()) return;
+        m_tracingCall = false;
 	if (nodep->dpiImport() && !nodep->pure()) {
 	    m_sideEffect = true;  // If appears on assign RHS, don't ever delete the assignment
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstUCFunc* nodep) {
 	m_sideEffect = true;  // If appears on assign RHS, don't ever delete the assignment
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstCMath* nodep) {
 	m_sideEffect = true;  // If appears on assign RHS, don't ever delete the assignment
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
     virtual void visit(AstVar*) {}	// Don't want varrefs under it
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -454,9 +449,10 @@ public:
 	m_statep = statep;
 	m_sideEffect = false;
 	m_noopt = false;
+        m_tracingCall = false;
 	{
-	    m_lifep = new LifeBlock (NULL, m_statep);
-	    nodep->accept(*this);
+            m_lifep = new LifeBlock(NULL, m_statep);
+            iterate(nodep);
 	    if (m_lifep) { delete m_lifep; m_lifep=NULL; }
 	}
     }
@@ -497,13 +493,13 @@ private:
     virtual void visit(AstNodeStmt*) {}	// Accelerate
     virtual void visit(AstNodeMath*) {}	// Accelerate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTRUCTORS
     LifeTopVisitor(AstNetlist* nodep, LifeState* statep) {
 	m_statep = statep;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~LifeTopVisitor() {}
 };
@@ -513,7 +509,9 @@ public:
 
 void V3Life::lifeAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    LifeState state;
-    LifeTopVisitor visitor (nodep, &state);
-    V3Global::dumpCheckGlobalTree("life.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        LifeState state;
+        LifeTopVisitor visitor (nodep, &state);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("life", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

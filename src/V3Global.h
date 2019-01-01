@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -22,12 +22,17 @@
 #define _V3GLOBAL_H_ 1
 
 #include "config_build.h"
+#ifndef HAVE_CONFIG_BUILD
+# error "Something failed during ./configure as config_build.h is incomplete. Perhaps you used autoreconf, don't."
+#endif
+
 #include "verilatedos.h"
-#include <string>
 
 #include "V3Error.h"
 #include "V3FileLine.h"
 #include "V3Options.h"
+
+#include <string>
 
 class AstNetlist;
 
@@ -45,11 +50,11 @@ public:
 	VERILOG_WIDTH
     };
     enum en m_e;
-    inline VWidthMinUsage () : m_e(LINT_WIDTH) {}
+    inline VWidthMinUsage() : m_e(LINT_WIDTH) {}
     // cppcheck-suppress noExplicitConstructor
-    inline VWidthMinUsage (en _e) : m_e(_e) {}
-    explicit inline VWidthMinUsage (int _e) : m_e(static_cast<en>(_e)) {}
-    operator en () const { return m_e; }
+    inline VWidthMinUsage(en _e) : m_e(_e) {}
+    explicit inline VWidthMinUsage(int _e) : m_e(static_cast<en>(_e)) {}
+    operator en() const { return m_e; }
   };
   inline bool operator== (VWidthMinUsage lhs, VWidthMinUsage rhs) { return (lhs.m_e == rhs.m_e); }
   inline bool operator== (VWidthMinUsage lhs, VWidthMinUsage::en rhs) { return (lhs.m_e == rhs); }
@@ -75,7 +80,7 @@ public:
     V3Options	opt;		// All options; let user see them directly
 
   public:
-    // CREATORS
+    // CONSTRUCTORS
     V3Global() {
 	m_debugFileNumber = 0;
 	m_widthMinUsage = VWidthMinUsage::LINT_WIDTH;
@@ -97,7 +102,7 @@ public:
     // METHODS
     void readFiles();
     void checkTree();
-    static void dumpCheckGlobalTree(const string& filename, int newNumber=0, bool doDump=true);
+    static void dumpCheckGlobalTree(const string& stagename, int newNumber=0, bool doDump=true);
     void assertDTypesResolved(bool flag) { m_assertDTypesResolved = flag; }
     void widthMinUsage(const VWidthMinUsage& flag) { m_widthMinUsage = flag; }
     bool constRemoveXs() const { return m_constRemoveXs; }

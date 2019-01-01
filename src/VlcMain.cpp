@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -19,6 +19,13 @@
 //*************************************************************************
 
 // Cheat for speed and compile .cpp files into one object
+#include "config_build.h"
+#ifndef HAVE_CONFIG_BUILD
+# error "Something failed during ./configure as config_build.h is incomplete. Perhaps you used autoreconf, don't."
+#endif
+
+#include "verilatedos.h"
+
 #define _V3ERROR_NO_GLOBAL_ 1
 #include "V3Error.cpp"
 #include "V3String.cpp"
@@ -28,9 +35,8 @@
 #include "VlcOptions.h"
 #include "VlcTop.h"
 
-#include <fstream>
 #include <algorithm>
-#include <unistd.h>
+#include <fstream>
 
 //######################################################################
 // VlcOptions
@@ -77,6 +83,10 @@ void VlcOptions::parseOptsList(int argc, char** argv) {
 	    else if ( onoff   (sw, "-rank", flag/*ref*/) ) { m_rank = flag; }
 	    else if ( onoff   (sw, "-unlink", flag/*ref*/) )	{ m_unlink = flag; }
 	    // Parameterized switches
+            else if ( !strcmp (sw, "-annotate-min") && (i+1)<argc ) {
+                shift;
+                m_annotateMin = atoi(argv[i]);
+            }
 	    else if ( !strcmp (sw, "-annotate") && (i+1)<argc ) {
 		shift;
 		m_annotateOut = argv[i];
@@ -101,7 +111,7 @@ void VlcOptions::parseOptsList(int argc, char** argv) {
 		m_writeFile = argv[i];
 	    }
 	    else {
-		v3fatal ("Invalid option: "<<argv[i]);
+                v3fatal("Invalid option: "<<argv[i]);
 	    }
 	    shift;
 	} // - options
@@ -110,7 +120,7 @@ void VlcOptions::parseOptsList(int argc, char** argv) {
 	    shift;
 	}
 	else {
-	    v3fatal ("Invalid argument: "<<argv[i]);
+            v3fatal("Invalid argument: "<<argv[i]);
 	    shift;
 	}
     }
@@ -123,7 +133,7 @@ void VlcOptions::showVersion(bool verbose) {
     if (!verbose) return;
 
     cout <<endl;
-    cout << "Copyright 2003-2017 by Wilson Snyder.  Verilator is free software; you can\n";
+    cout << "Copyright 2003-2018 by Wilson Snyder.  Verilator is free software; you can\n";
     cout << "redistribute it and/or modify the Verilator internals under the terms of\n";
     cout << "either the GNU Lesser General Public License Version 3 or the Perl Artistic\n";
     cout << "License Version 2.0.\n";
@@ -136,7 +146,7 @@ void VlcOptions::showVersion(bool verbose) {
 
 int main(int argc, char** argv, char** env) {
     // General initialization
-    ios::sync_with_stdio();
+    std::ios::sync_with_stdio();
 
     VlcTop top;
 
@@ -144,13 +154,15 @@ int main(int argc, char** argv, char** env) {
     top.opt.parseOptsList(argc-1, argv+1);
 
     if (top.opt.readFiles().empty()) {
-	top.opt.addReadFile("vlt_coverage.pl");
+	top.opt.addReadFile("vlt_coverage.dat");
     }
 
-    const VlStringSet& readFiles = top.opt.readFiles();
-    for (VlStringSet::iterator it = readFiles.begin(); it != readFiles.end(); ++it) {
-	string filename = *it;
-	top.readCoverage(filename);
+    {
+	const VlStringSet& readFiles = top.opt.readFiles();
+	for (VlStringSet::iterator it = readFiles.begin(); it != readFiles.end(); ++it) {
+	    string filename = *it;
+	    top.readCoverage(filename);
+	}
     }
 
     if (debug() >= 9) {
@@ -159,7 +171,7 @@ int main(int argc, char** argv, char** env) {
     }
 
     V3Error::abortIfWarnings();
-    if (top.opt.annotateOut() != "") {
+    if (!top.opt.annotateOut().empty()) {
         top.annotate(top.opt.annotateOut());
     }
 
@@ -168,7 +180,7 @@ int main(int argc, char** argv, char** env) {
 	top.tests().dump(false);
     }
 
-    if (top.opt.writeFile() != "") {
+    if (!top.opt.writeFile().empty()) {
 	top.writeCoverage(top.opt.writeFile());
 	V3Error::abortIfWarnings();
         if (top.opt.unlink()) {
@@ -179,7 +191,7 @@ int main(int argc, char** argv, char** env) {
 	    }
         }
     }
-    
+
     // Final writing shouldn't throw warnings, but...
     V3Error::abortIfWarnings();
 

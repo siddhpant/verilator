@@ -7,15 +7,17 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-$Self->{golden_out} ||= "t/$Self->{name}.out";
+scenarios(simulator => 1);
 
-compile (
-	 verilator_flags2 => ["--stats --O3 -x-assign fast"],
-	 );
+compile(
+    verilator_flags2 => ["--stats --O3 -x-assign fast"],
+    );
 
-execute (
-	 check_finished=>1,
-     );
+execute(
+    check_finished => 1,
+    );
 
-ok(files_identical("$Self->{obj_dir}/$Self->{name}_logger.log", $Self->{golden_out}));
+files_identical("$Self->{obj_dir}/$Self->{name}_logger.log", $Self->{golden_filename});
+
+ok(1);
 1;

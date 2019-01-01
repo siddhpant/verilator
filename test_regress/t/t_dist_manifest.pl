@@ -7,20 +7,13 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
+scenarios(dist => 1);
+
 my $root = "..";
 my $Debug;
 
 ### Must trim output before and after our file list
-`cd $root && make dist-file-list`;
-my $manifest_files = `cd $root && make dist-file-list`;
-$manifest_files =~ s!.*begin-dist-file-list:!!sg;
-$manifest_files =~ s!end-dist-file-list:.*$!!sg;
-print "MF $manifest_files\n";
-my %files;
-foreach my $file (split /\s+/,$manifest_files) {
-    next if $file eq '';
-    $files{$file} |= 1;
-}
+my %files = %{get_manifest_files($root)};
 
 my $all_files = `cd $root && find . -type f -print`;
 foreach my $file (split /\s+/,$all_files) {
@@ -33,10 +26,10 @@ my %file_regexps;
 my $skip = file_contents("$root/MANIFEST.SKIP");
 foreach my $file (sort keys %files) {
     foreach my $skip (split /\s+/,$skip) {
-	if ($file =~ /$skip/) {
-	    $files{$file} |= 4;
-	    $file_regexps{$file} = $skip;
-	}
+        if ($file =~ /$skip/) {
+            $files{$file} |= 4;
+            $file_regexps{$file} = $skip;
+        }
     }
 }
 
@@ -47,26 +40,41 @@ foreach my $file (sort keys %files) {
     my $skip = $files{$file}&4;
 
     print +(($tar ? "TAR ":"    ")
-	    .($dir ? "DIR ":"    ")
-	    .($skip ? "SKIP ":"     ")
-	    ."  $file\n") if $Debug;
+            .($dir ? "DIR ":"    ")
+            .($skip ? "SKIP ":"     ")
+            ."  $file\n") if $Debug;
 
     if ($dir && !$tar && !$skip) {
-	$warns{$file} = "File not in manifest or MANIFEST.SKIP: $file";
+        $warns{$file} = "File not in manifest or MANIFEST.SKIP: $file";
     } elsif (!$dir && $tar && !$skip) {
-	$warns{$file} = "File in manifest, but not directory: $file";
+        $warns{$file} = "File in manifest, but not directory: $file";
     } elsif ($dir && $tar && $skip) {
-	$warns{$file} = "File in manifest and also MANIFEST.SKIP, too general skip regexp '$file_regexps{$file}'?: $file";
+        $warns{$file} = "File in manifest and also MANIFEST.SKIP, too general skip regexp '$file_regexps{$file}'?: $file";
     }
 }
 
 if (keys %warns) {
     # First warning lists everything as that's shown in the driver summary
-    $Self->error("Files mismatch with manifest: ",join(' ',sort keys %warns));
+    error("Files mismatch with manifest: ",join(' ',sort keys %warns));
     foreach my $file (sort keys %warns) {
-	$Self->error($warns{$file});
+        error($warns{$file});
     }
 }
 
 ok(1);
 1;
+
+sub get_manifest_files {
+    my $root = shift;
+    `cd $root && make dist-file-list`;
+    my $manifest_files = `cd $root && make dist-file-list`;
+    $manifest_files =~ s!.*begin-dist-file-list:!!sg;
+    $manifest_files =~ s!end-dist-file-list:.*$!!sg;
+    print "MF $manifest_files\n" if $Self->{verbose};
+    my %files;
+    foreach my $file (split /\s+/,$manifest_files) {
+        next if $file eq '';
+        $files{$file} |= 1;
+    }
+    return \%files;
+}

@@ -8,7 +8,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -26,7 +26,7 @@
 // Autoconf substitutes this with the strings from AC_INIT.
 #define PACKAGE_STRING ""
 
-#define DTVERSION	PACKAGE_STRING
+#define DTVERSION PACKAGE_STRING
 
 //**********************************************************************
 //**** Functions
@@ -53,12 +53,6 @@
 #ifndef DEFENV_SYSTEMC_LIBDIR
 # define DEFENV_SYSTEMC_LIBDIR ""
 #endif
-#ifndef DEFENV_SYSTEMPERL
-# define DEFENV_SYSTEMPERL ""
-#endif
-#ifndef DEFENV_SYSTEMPERL_INCLUDE
-# define DEFENV_SYSTEMPERL_INCLUDE ""
-#endif
 #ifndef DEFENV_VERILATOR_ROOT
 # define DEFENV_VERILATOR_ROOT ""
 #endif
@@ -71,11 +65,26 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <iostream>
 
-using namespace std;
+// Avoid needing std:: prefixes on some very common items
+typedef std::string string;
+using std::cout;
+using std::endl;
+using std::make_pair;
+
+//**********************************************************************
+//**** Configure-discovered library options
+
+// Define if struct stat has st_mtim.tv_nsec (from configure)
+#undef HAVE_STAT_NSEC
 
 //**********************************************************************
 //**** OS and compiler specifics
 
 #include "verilatedos.h"
 
+//**********************************************************************
+//**** This file sometimes gets truncated, so check in consumers
+#define HAVE_CONFIG_BUILD

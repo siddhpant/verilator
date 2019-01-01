@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -27,11 +27,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <map>
 
 #include "V3Global.h"
 #include "V3Broken.h"
@@ -40,6 +35,10 @@
 // This visitor does not edit nodes, and is called at error-exit, so should use constant iterators
 #include "V3AstConstOnly.h"
 
+#include <algorithm>
+#include <cstdarg>
+#include VL_INCLUDE_UNORDERED_MAP
+
 //######################################################################
 
 class BrokenTable : public AstNVisitor {
@@ -47,7 +46,7 @@ class BrokenTable : public AstNVisitor {
 private:
     // MEMBERS
     //   For each node, we keep if it exists or not.
-    typedef map<const AstNode*,int> NodeMap;
+    typedef vl_unordered_map<const AstNode*,int> NodeMap;  // Performance matters (when --debug)
     static NodeMap s_nodes;	// Set of all nodes that exist
     // BITMASK
     enum { FLAG_ALLOCATED	= 0x01 };	// new() and not delete()ed
@@ -59,19 +58,24 @@ public:
     // METHODS
     static void deleted(const AstNode* nodep) {
 	// Called by operator delete on any node - only if VL_LEAK_CHECKS
-	if (debug()>=9) cout<<"-nodeDel:  "<<(void*)(nodep)<<endl;
+        if (debug()>=9) cout<<"-nodeDel:  "<<cvtToHex(nodep)<<endl;
 	NodeMap::iterator iter = s_nodes.find(nodep);
 	if (iter==s_nodes.end() || !(iter->second & FLAG_ALLOCATED)) {
-	    ((AstNode*)(nodep))->v3fatalSrc("Deleting AstNode object that was never tracked or already deleted");
+            reinterpret_cast<const AstNode*>(nodep)
+                ->v3fatalSrc("Deleting AstNode object that was never tracked or already deleted");
 	}
 	if (iter!=s_nodes.end()) s_nodes.erase(iter);
     }
+#if defined(__GNUC__) && __GNUC__ == 4 && __GNUC_MINOR__ == 4
+    // GCC 4.4.* compiler warning bug, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=39390
+# pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#endif
     static void addNewed(const AstNode* nodep) {
 	// Called by operator new on any node - only if VL_LEAK_CHECKS
-	if (debug()>=9) cout<<"-nodeNew:  "<<(void*)(nodep)<<endl;
+        if (debug()>=9) cout<<"-nodeNew:  "<<cvtToHex(nodep)<<endl;
 	NodeMap::iterator iter = s_nodes.find(nodep);
 	if (iter!=s_nodes.end() || (iter->second & FLAG_ALLOCATED)) {
-	    ((AstNode*)(nodep))->v3fatalSrc("Newing AstNode object that is already allocated");
+	    nodep->v3fatalSrc("Newing AstNode object that is already allocated");
 	}
 	if (iter == s_nodes.end()) {
 	    int flags = FLAG_ALLOCATED;  // This int needed to appease GCC 4.1.2
@@ -151,9 +155,11 @@ public:
 		    // Use only AstNode::dump instead of the virtual one, as there
 		    // may be varp() and other cross links that are bad.
 		    if (v3Global.opt.debugCheck()) {
-			cerr<<"%Error: LeakedNode"<<(it->first->backp()?"Back: ":": ");
-			((AstNode*)(it->first))->AstNode::dump(cerr);
-			cerr<<endl;
+                        std::cerr<<"%Error: LeakedNode"<<(it->first->backp()?"Back: ":": ");
+                        AstNode* rawp = const_cast<AstNode*>
+                            (static_cast<const AstNode*>(it->first));
+                        rawp->AstNode::dump(std::cerr);
+                        std::cerr<<endl;
 			V3Error::incErrors();
 		    }
 		    it->second |= FLAG_LEAKED;
@@ -189,7 +195,7 @@ private:
     // METHODS
     void processAndIterate(AstNode* nodep) {
 	BrokenTable::addInTree(nodep, nodep->maybePointedTo());
-	nodep->iterateChildrenConst(*this);
+        iterateChildrenConst(nodep);
     }
     // VISITORS
     virtual void visit(AstNode* nodep) {
@@ -198,7 +204,7 @@ private:
 public:
     // CONSTUCTORS
     explicit BrokenMarkVisitor(AstNetlist* nodep) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~BrokenMarkVisitor() {}
 };
@@ -208,7 +214,7 @@ public:
 
 class BrokenCheckVisitor : public AstNVisitor {
 private:
-    void checkWidthMin(AstNode* nodep) {
+    void checkWidthMin(const AstNode* nodep) {
 	if (nodep->width() != nodep->widthMin()
 	    && v3Global.widthMinUsage()==VWidthMinUsage::MATCHES_WIDTH) {
 	    nodep->v3fatalSrc("Width != WidthMin");
@@ -220,8 +226,13 @@ private:
 	    nodep->v3fatalSrc("Broken link in node (or something without maybePointedTo): "<<whyp);
 	}
 	if (nodep->dtypep()) {
-	    if (!nodep->dtypep()->brokeExists()) { nodep->v3fatalSrc("Broken link in node->dtypep() to "<<(void*)nodep->dtypep()); }
-	    else if (!nodep->dtypep()->castNodeDType()) { nodep->v3fatalSrc("Non-dtype link in node->dtypep() to "<<(void*)nodep->dtypep()); }
+            if (!nodep->dtypep()->brokeExists()) {
+                nodep->v3fatalSrc("Broken link in node->dtypep() to "
+                                  <<cvtToHex(nodep->dtypep()));
+            } else if (!VN_IS(nodep->dtypep(), NodeDType)) {
+                nodep->v3fatalSrc("Non-dtype link in node->dtypep() to "
+                                  <<cvtToHex(nodep->dtypep()));
+            }
 	}
 	if (v3Global.assertDTypesResolved()) {
 	    if (nodep->hasDType()) {
@@ -230,11 +241,20 @@ private:
 		if (nodep->dtypep()) nodep->v3fatalSrc("DType on node without hasDType(): "<<nodep->prettyTypeName());
 	    }
 	    if (nodep->getChildDTypep()) nodep->v3fatalSrc("childDTypep() non-null on node after should have removed");
-	    if (AstNodeDType* dnodep = nodep->castNodeDType()) checkWidthMin(dnodep);
+            if (const AstNodeDType* dnodep = VN_CAST(nodep, NodeDType)) checkWidthMin(dnodep);
 	}
 	checkWidthMin(nodep);
-	nodep->iterateChildrenConst(*this);
+        iterateChildrenConst(nodep);
 	BrokenTable::setUnder(nodep,false);
+    }
+    virtual void visit(AstNodeAssign* nodep) {
+	processAndIterate(nodep);
+	if (v3Global.assertDTypesResolved()
+	    && nodep->brokeLhsMustBeLvalue()
+            && VN_IS(nodep->lhsp(), NodeVarRef)
+            && !VN_CAST(nodep->lhsp(), NodeVarRef)->lvalue()) {
+	    nodep->v3fatalSrc("Assignment LHS is not an lvalue");
+	}
     }
     virtual void visit(AstNode* nodep) {
 	processAndIterate(nodep);
@@ -242,7 +262,7 @@ private:
 public:
     // CONSTUCTORS
     explicit BrokenCheckVisitor(AstNetlist* nodep) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~BrokenCheckVisitor() {}
 };

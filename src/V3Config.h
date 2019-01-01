@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2010-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2010-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,9 +20,10 @@
 
 #ifndef _V3CONFIG_H_
 #define _V3CONFIG_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
-#include <string>
+
 #include "V3Error.h"
 #include "V3FileLine.h"
 
@@ -30,7 +31,7 @@
 
 class V3Config {
 public:
-    static void addIgnore(V3ErrorCode code, bool on, string filename, int min, int max);
+    static void addIgnore(V3ErrorCode code, bool on, const string& filename, int min, int max);
     static void applyIgnores(FileLine* filelinep);
 };
 

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2005-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2005-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -22,10 +22,9 @@
 #define _V3HASHED_H_ 1
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include "V3Error.h"
 #include "V3Ast.h"
-
-#include <map>
 
 //============================================================================
 
@@ -36,11 +35,7 @@ public:
     ~VHashedBase() {}
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //============================================================================
@@ -58,7 +53,7 @@ class V3Hashed : public VHashedBase {
     AstUser4InUse	m_inuser4;
 
     // TYPES
-    typedef multimap<V3Hash,AstNode*> HashMmap;
+    typedef std::multimap<V3Hash,AstNode*> HashMmap;
 public:
     typedef HashMmap::iterator iterator;
 private:
@@ -87,6 +82,8 @@ public:
     void dumpFile(const string& filename, bool tree);
     void dumpFilePrefixed(const string& nameComment, bool tree=false);
     static V3Hash nodeHash(AstNode* nodep) { return V3Hash(nodep->user4p()); }
+    // Hash of the nodep tree, without caching in user4.
+    static V3Hash uncachedHash(const AstNode* nodep);
 };
 
 #endif // Guard

@@ -11,7 +11,7 @@ This is the Verilator package README file.
 
 http://www.veripool.org/verilator
 
-This package is Copyright 2003-2017 by Wilson Snyder.  (Report bugs to
+This package is Copyright 2003-2018 by Wilson Snyder.  (Report bugs to
 L<http://www.veripool.org/>.)
 
 Verilator is free software; you can redistribute it and/or modify it under
@@ -51,7 +51,7 @@ output (not Verilator itself) compiles under MSVC++ 2008 and newer.
 
 =head1 INSTALLATION
 
-For more details see 
+For more details see
 L<http://www.veripool.org/projects/verilator/wiki/Installing>.
 
 If you will be modifying Verilator, you should use the "git" method as it
@@ -78,7 +78,14 @@ instead.)
 
 =item
 
-You will need the C<flex> and C<bison> packages installed.
+To use Verilator you will need the C<perl>, C<make> (or C<gmake>), and
+C<g++> (or C<clang>) packages.
+
+To use Verilator LXT2 or FST tracing you will need the C<gtkwave> and C<libgz> (on
+Ubuntu C<zlibc> C<zlib1g> C<zlib1g-dev>) packages installed.
+
+To compile Verilator in addition to the above you need the C<flex>,
+C<bison> and C<texi2html> packages installed.
 
 =item
 
@@ -169,6 +176,9 @@ have the verilator binary directory in your PATH (this should already be
 true if using the default configure), and make sure VERILATOR_ROOT is not
 set.
 
+You may now wish to consult the examples directory. Type C<make> inside any
+example directory to run the example.
+
 =back
 
 =head1 USAGE DOCUMENTATION
@@ -190,10 +200,10 @@ The directories in the kit after de-taring are as follows:
     include/verilated.v         => Stub defines for linting
     include/verilated.mk        => Common makefile
     src/                        => Translator source code
-    test_v                      => Example Verilog code for other test dirs
-    test_c                      => Example Verilog->C++ conversion
-    test_sc                     => Example Verilog->SystemC conversion
-    test_verilated              => Internal tests
+    examples/hello_world_c      => Example simple Verilog->C++ conversion
+    examples/hello_world_sc     => Example simple Verilog->SystemC conversion
+    examples/tracing_c          => Example Verilog->C++ with tracing
+    examples/tracing_sc         => Example Verilog->SystemC with tracing
     test_regress                => Internal tests
 
 =head1 LIMITATIONS

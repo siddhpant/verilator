@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -29,14 +29,13 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <map>
 
 #include "V3Global.h"
 #include "V3Branch.h"
 #include "V3Ast.h"
+
+#include <cstdarg>
+#include <map>
 
 //######################################################################
 // Branch state, as a visitor of each AstNode
@@ -49,7 +48,7 @@ private:
     AstUser1InUse	m_inuser1;
 
     // TYPES
-    typedef vector<AstCFunc*> CFuncVec;
+    typedef std::vector<AstCFunc*> CFuncVec;
 
     // STATE
     int		m_likely;	// Excuses for branch likely taken
@@ -57,11 +56,7 @@ private:
     CFuncVec	m_cfuncsp;	// List of all tasks
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void reset() {
 	m_likely = false;
@@ -82,12 +77,12 @@ private:
 	{
 	    // Do if
 	    reset();
-	    nodep->ifsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->ifsp());
 	    int ifLikely = m_likely;
 	    int ifUnlikely = m_unlikely;
 	    // Do else
 	    reset();
-	    nodep->elsesp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->elsesp());
 	    int elseLikely = m_likely;
 	    int elseUnlikely = m_unlikely;
 	    // Compute
@@ -104,16 +99,16 @@ private:
     virtual void visit(AstCCall* nodep) {
 	checkUnlikely(nodep);
 	nodep->funcp()->user1Inc();
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstCFunc* nodep) {
 	checkUnlikely(nodep);
 	m_cfuncsp.push_back(nodep);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstNode* nodep) {
 	checkUnlikely(nodep);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
     // METHODS
@@ -130,7 +125,7 @@ public:
     // CONSTUCTORS
     explicit BranchVisitor(AstNetlist* nodep) {
 	reset();
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	calc_tasks();
     }
     virtual ~BranchVisitor() {}
@@ -139,7 +134,7 @@ public:
 //######################################################################
 // Branch class functions
 
-void V3Branch::branchAll(AstNetlist* rootp) {
+void V3Branch::branchAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    BranchVisitor visitor (rootp);
+    BranchVisitor visitor (nodep);
 }

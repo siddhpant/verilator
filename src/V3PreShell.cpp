@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2004-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,13 +20,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <iostream>
-#include <algorithm>
-#include <list>
-#include <set>
 
 #include "V3Global.h"
 #include "V3PreShell.h"
@@ -34,6 +27,12 @@
 #include "V3File.h"
 #include "V3Parse.h"
 #include "V3Os.h"
+
+#include <algorithm>
+#include <cstdarg>
+#include <iostream>
+#include <list>
+#include <set>
 
 //######################################################################
 
@@ -94,8 +93,8 @@ protected:
 	}
     }
 
-    bool preproc (FileLine* fl, const string& modname, V3InFilter* filterp, V3ParseImp* parsep,
-		  const string& errmsg) {  // "" for no error
+    bool preproc(FileLine* fl, const string& modname, V3InFilter* filterp, V3ParseImp* parsep,
+                 const string& errmsg) {  // "" for no error
 	debug(true);  // Recheck if debug on - first check was before command line passed
 
 	// Preprocess the given module, putting output in vppFilename
@@ -113,7 +112,7 @@ protected:
 	return true;
     }
 
-    void preprocInclude (FileLine* fl, const string& modname) {
+    void preprocInclude(FileLine* fl, const string& modname) {
         // by Kris
         if (v3Global.opt.lintOnly()) {
             fl->v3warn(IGNINC, "Ignore include file: "<<modname);
@@ -125,15 +124,18 @@ protected:
         }
     }
 
-    bool preprocOpen (FileLine* fl, V3InFilter* filterp, const string& modname, const string& lastpath,
-		      const string& errmsg) {  // Error message or "" to suppress
+    bool preprocOpen(FileLine* fl, V3InFilter* filterp, const string& modname, const string& lastpath,
+                     const string& errmsg) {  // Error message or "" to suppress
 	// Returns true if successful
-	// Allow user to put `defined names on the command line instead of filenames,
-	// then convert them properly.
-	string ppmodname = s_preprocp->removeDefines (modname);
+	// Try a pure name in case user has a bogus `filename they don't expect
+        string filename = v3Global.opt.filePath(fl, modname, lastpath, errmsg);
+	if (filename=="") {
+	    // Allow user to put `defined names on the command line instead of filenames,
+	    // then convert them properly.
+            string ppmodname = s_preprocp->removeDefines(modname);
 
-	// Open include or master file
-	string filename = v3Global.opt.filePath (fl, ppmodname, lastpath, errmsg);
+            filename = v3Global.opt.filePath(fl, ppmodname, lastpath, errmsg);
+	}
 	if (filename=="") return false;  // Not found
 
 	UINFO(2,"    Reading "<<filename<<endl);
@@ -169,4 +171,7 @@ void V3PreShell::defineCmdLine(const string& name, const string& value) {
 }
 void V3PreShell::undef(const string& name) {
     V3PreShellImp::s_preprocp->undef(name);
+}
+void V3PreShell::dumpDefines(std::ostream& os) {
+    V3PreShellImp::s_preprocp->dumpDefines(os);
 }

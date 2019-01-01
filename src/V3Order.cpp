@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -44,7 +44,7 @@
 //		Add vertex for this logic
 //		    Add edge logic_sensitive_vertex->logic_vertex
 //		    Add edge logic_generated_var_PREORDER->logic_vertex
-//			This insures the AssignPre gets scheduled before this logic
+//			This ensures the AssignPre gets scheduled before this logic
 //		    Add edge logic_vertex->consumed_var_PREVAR
 //		    Add edge logic_vertex->consumed_var_POSTVAR
 //		    Add edge logic_vertex->logic_generated_var (same as if comb)
@@ -78,32 +78,38 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <vector>
-#include <deque>
-#include <map>
-#include <iomanip>
-#include <sstream>
-#include <memory>
 
-#include "V3Global.h"
-#include "V3File.h"
 #include "V3Ast.h"
+#include "V3Const.h"
+#include "V3EmitCBase.h"
+#include "V3EmitV.h"
+#include "V3File.h"
+#include "V3Global.h"
 #include "V3Graph.h"
+#include "V3GraphStream.h"
 #include "V3List.h"
+#include "V3Partition.h"
+#include "V3PartitionGraph.h"
 #include "V3SenTree.h"
 #include "V3Stats.h"
-#include "V3EmitCBase.h"
-#include "V3Const.h"
 
 #include "V3Order.h"
 #include "V3OrderGraph.h"
-#include "V3EmitV.h"
+
+#include <algorithm>
+#include <cstdarg>
+#include <deque>
+#include <iomanip>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <vector>
+#include VL_INCLUDE_UNORDERED_MAP
+#include VL_INCLUDE_UNORDERED_SET
 
 class OrderMoveDomScope;
+
+static bool domainsExclusive(const AstSenTree* fromp, const AstSenTree* top);
 
 //######################################################################
 // Functions for above graph classes
@@ -111,10 +117,10 @@ class OrderMoveDomScope;
 void OrderGraph::loopsVertexCb(V3GraphVertex* vertexp) {
     if (debug()) cout<<"-Info-Loop: "<<vertexp<<" "<<endl;
     if (OrderLogicVertex* vvertexp = dynamic_cast<OrderLogicVertex*>(vertexp)) {
-	cerr<<V3Error::msgPrefix()<<"     Example path: "<<vvertexp->nodep()->fileline()<<" "<<vvertexp->nodep()->typeName()<<endl;
+        std::cerr<<V3Error::msgPrefix()<<"     Example path: "<<vvertexp->nodep()->fileline()<<" "<<vvertexp->nodep()->typeName()<<endl;
     }
     if (OrderVarVertex* vvertexp = dynamic_cast<OrderVarVertex*>(vertexp)) {
-	cerr<<V3Error::msgPrefix()<<"     Example path: "<<vvertexp->varScp()->fileline()<<" "<<vvertexp->varScp()->prettyName()<<endl;
+        std::cerr<<V3Error::msgPrefix()<<"     Example path: "<<vvertexp->varScp()->fileline()<<" "<<vvertexp->varScp()->prettyName()<<endl;
     }
 };
 
@@ -127,21 +133,19 @@ public:
     V3List<OrderMoveVertex*>	m_readyVertices;	// Ready vertices with same domain & scope
 private:
     bool			m_onReadyList;		// True if DomScope is already on list of ready dom/scopes
-    AstSenTree*			m_domainp;		// Domain all vertices belong to
-    AstScope*			m_scopep;		// Scope all vertices belong to
-    OrderLoopId			m_inLoop;		// Loop member of
+    const AstSenTree*		m_domainp;		// Domain all vertices belong to
+    const AstScope*	        m_scopep;		// Scope all vertices belong to
 
-    typedef pair<pair<OrderLoopId, AstSenTree*>, AstScope*> DomScopeKey;
+    typedef std::pair<const AstSenTree*, const AstScope*> DomScopeKey;
     typedef std::map<DomScopeKey, OrderMoveDomScope*> DomScopeMap;
     static DomScopeMap	s_dsMap;	// Structure registered for each dom/scope pairing
 
 public:
-    OrderMoveDomScope(OrderLoopId inLoop, AstSenTree* domainp, AstScope* scopep)
-	: m_onReadyList(false), m_domainp(domainp), m_scopep(scopep), m_inLoop(inLoop) {}
+    OrderMoveDomScope(const AstSenTree* domainp, const AstScope* scopep)
+	: m_onReadyList(false), m_domainp(domainp), m_scopep(scopep) {}
     OrderMoveDomScope* readyDomScopeNextp() const { return m_readyDomScopeE.nextp(); }
-    OrderLoopId inLoop() const { return m_inLoop; }
-    AstSenTree* domainp() const { return m_domainp; }
-    AstScope*   scopep() const { return m_scopep; }
+    const AstSenTree* domainp() const { return m_domainp; }
+    const AstScope* scopep() const { return m_scopep; }
     void ready(OrderVisitor* ovp);	// Check the domScope is on ready list, add if not
     void movedVertex(OrderVisitor* ovp, OrderMoveVertex* vertexp);	// Mark one vertex as finished, remove from ready list if done
     // STATIC MEMBERS (for lookup)
@@ -152,28 +156,28 @@ public:
 	s_dsMap.clear();
     }
     V3List<OrderMoveVertex*>& readyVertices() { return m_readyVertices; }
-    static OrderMoveDomScope* findCreate (OrderLoopId inLoop, AstSenTree* domainp, AstScope* scopep) {
-	const DomScopeKey key = make_pair(make_pair(inLoop,domainp),scopep);
+    static OrderMoveDomScope* findCreate(const AstSenTree* domainp,
+                                         const AstScope* scopep) {
+	const DomScopeKey key = make_pair(domainp,scopep);
 	DomScopeMap::iterator iter = s_dsMap.find(key);
 	if (iter != s_dsMap.end()) {
 	    return iter->second;
 	} else {
-	    OrderMoveDomScope* domScopep = new OrderMoveDomScope(inLoop, domainp, scopep);
+	    OrderMoveDomScope* domScopep = new OrderMoveDomScope(domainp, scopep);
 	    s_dsMap.insert(make_pair(key, domScopep));
 	    return domScopep;
 	}
     }
     string name() const {
 	return (string("MDS:")
-		+" lp="+cvtToStr(inLoop())
-		+" d="+cvtToStr((void*)domainp())
-		+" s="+cvtToStr((void*)scopep()));
+                +" d="+cvtToHex(domainp())
+                +" s="+cvtToHex(scopep()));
     }
 };
 
 OrderMoveDomScope::DomScopeMap	OrderMoveDomScope::s_dsMap;
 
-inline ostream& operator<< (ostream& lhs, const OrderMoveDomScope& rhs) {
+inline std::ostream& operator<< (std::ostream& lhs, const OrderMoveDomScope& rhs) {
     lhs<<rhs.name();
     return lhs;
 }
@@ -242,7 +246,7 @@ struct OrderVarFanoutCmp {
 };
 
 //######################################################################
-// The class is used for propagating the clocker attribute for further 
+// The class is used for propagating the clocker attribute for further
 // avoiding marking clock signals as circular.
 // Transformation:
 //    while (newClockerMarked)
@@ -251,7 +255,7 @@ struct OrderVarFanoutCmp {
 //                mark LHS as clocker as well.
 //                newClockerMarked = true;
 //
-// In addition it also check whether clock and data signals are mixed, and 
+// In addition it also check whether clock and data signals are mixed, and
 // produce a CLKDATA warning if so.
 //
 class OrderClkMarkVisitor : public AstNVisitor {
@@ -264,15 +268,11 @@ private:
     int  m_rightClkWidth;	// Clk width on the RHS
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     virtual void visit(AstNodeAssign* nodep) {
 	m_hasClk = false;
-	if (AstVarRef* varrefp = nodep->rhsp()->castVarRef()) {
+        if (AstVarRef* varrefp = VN_CAST(nodep->rhsp(), VarRef)) {
 	    this->visit(varrefp);
 	    m_rightClkWidth = varrefp->width();
 	    if (varrefp->varp()->attrClocker() == AstVarAttrClocker::CLOCKER_YES) {
@@ -286,7 +286,7 @@ private:
 	} else {
 	    m_inAss = true;
 	    m_childClkWidth = 0;
-	    nodep->rhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
 	    m_rightClkWidth = m_childClkWidth;
 	    m_inAss = false;
 	}
@@ -300,7 +300,7 @@ private:
 		return; // skip the marking
 	    }
 
-	    AstVarRef* lhsp = nodep->lhsp()->castVarRef();
+            const AstVarRef* lhsp = VN_CAST(nodep->lhsp(), VarRef);
 	    if (lhsp && (lhsp->varp()->attrClocker() == AstVarAttrClocker::CLOCKER_UNKNOWN)) {
 		lhsp->varp()->attrClocker(AstVarAttrClocker::CLOCKER_YES); // mark as clocker
 		m_newClkMarked = true; // enable a further run since new clocker is marked
@@ -322,31 +322,31 @@ private:
     }
     virtual void visit(AstConcat* nodep) {
 	if (m_inAss) {
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    int lw = m_childClkWidth;
-	    nodep->rhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
 	    int rw = m_childClkWidth;
 	    m_childClkWidth = lw + rw;  // Pass up
 	}
     }
     virtual void visit(AstNodeSel* nodep) {
 	if (m_inAss) {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    // Pass up result width
 	    if (m_childClkWidth > nodep->width()) m_childClkWidth = nodep->width();
 	}
     }
     virtual void visit(AstSel* nodep) {
 	if (m_inAss) {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    if (m_childClkWidth > nodep->width()) m_childClkWidth = nodep->width();
 	}
     }
     virtual void visit(AstReplicate* nodep) {
 	if (m_inAss) {
-	    nodep->iterateChildren(*this);
-	    if (nodep->rhsp()->castConst()) {
-		m_childClkWidth = m_childClkWidth * nodep->rhsp()->castConst()->toUInt();
+            iterateChildren(nodep);
+            if (VN_IS(nodep->rhsp(), Const)) {
+                m_childClkWidth = m_childClkWidth * VN_CAST(nodep->rhsp(), Const)->toUInt();
 	    } else {
 		m_childClkWidth = nodep->width(); // can not check in this case.
 	    }
@@ -354,11 +354,11 @@ private:
     }
     virtual void visit(AstActive* nodep) {
 	m_inClocked = nodep->hasClocked();
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_inClocked = false;
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -371,55 +371,293 @@ public:
 	m_rightClkWidth = 0;
 	do {
 	    m_newClkMarked = false;
-	    nodep->accept(*this);
+            iterate(nodep);
 	} while (m_newClkMarked);
     }
     virtual ~OrderClkMarkVisitor() {}
 };
 
-
 //######################################################################
-// The class used to check if the assignment has clocker inside.
+// The class checks if the assignment generates a clock.
+
 class OrderClkAssVisitor : public AstNVisitor {
 private:
     bool m_clkAss; 	// There is signals marked as clocker in the assignment
-
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
     virtual void visit(AstNodeAssign* nodep) {
-	if (AstVarRef* varrefp = nodep->lhsp()->castVarRef() )
+        if (const AstVarRef* varrefp = VN_CAST(nodep->lhsp(), VarRef)) {
 	    if (varrefp->varp()->attrClocker() == AstVarAttrClocker::CLOCKER_YES) {
 		m_clkAss = true;
 		UINFO(6, "node was marked as clocker "<<varrefp<<endl);
 	    }
-	nodep->rhsp()->iterateChildren(*this);
+        }
+        iterateChildren(nodep->rhsp());
     }
     virtual void visit(AstVarRef* nodep) {
-	if (nodep->varp()->attrClocker() == AstVarAttrClocker::CLOCKER_YES) {
-	    m_clkAss = true;
-	    UINFO(6, "node was marked as clocker "<<nodep<<endl);
-	}
+        // Previous versions checked attrClocker() here, but this breaks
+        // the updated t_clocker VCD test.
+        // If reenable this visitor note AstNodeMath short circuit below
     }
+    virtual void visit(AstNodeMath* nodep) {}  // Accelerate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
-
 public:
     // CONSTUCTORS
     explicit OrderClkAssVisitor(AstNode* nodep) {
 	m_clkAss = false;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~OrderClkAssVisitor() {}
-
     // METHODS
-    bool isClkAss() {return m_clkAss;}
+    bool isClkAss() { return m_clkAss; }
 };
 
+//######################################################################
+// ProcessMoveBuildGraph
+
+template <class T_MoveVertex>
+class ProcessMoveBuildGraph {
+    // ProcessMoveBuildGraph takes as input the fine-grained graph of
+    // OrderLogicVertex, OrderVarVertex, etc; this is 'm_graph' in
+    // OrderVisitor. It produces a slightly coarsened graph to drive the
+    // code scheduling.
+    //
+    // * For the serial code scheduler, the new graph contains
+    //   nodes of type OrderMoveVertex.
+    //
+    // * For the threaded code scheduler, the new graph contains
+    //   nodes of type MTaskMoveVertex.
+    //
+    // * The difference in output type is abstracted away by the
+    //   'T_MoveVertex' template parameter; ProcessMoveBuildGraph otherwise
+    //   works the same way for both cases.
+
+    // TYPES
+    typedef std::pair<const V3GraphVertex*, const AstSenTree*> VxDomPair;
+    // Maps an (original graph vertex, domain) pair to a T_MoveVertex
+    // Not vl_unordered_map, because std::pair doesn't provide std::hash
+    typedef std::map<VxDomPair, T_MoveVertex*> Var2Move;
+    typedef vl_unordered_map<const OrderLogicVertex*, T_MoveVertex*> Logic2Move;
+
+public:
+    class MoveVertexMaker {
+    public:
+        // Clients of ProcessMoveBuildGraph must supply MoveVertexMaker
+        // which creates new T_MoveVertex's. Each new vertex wraps lvertexp
+        // (which may be NULL.)
+        virtual T_MoveVertex* makeVertexp(OrderLogicVertex* lvertexp,
+                                          const OrderEitherVertex* varVertexp,
+                                          const AstScope* scopep,
+                                          const AstSenTree* domainp) = 0;
+        virtual void freeVertexp(T_MoveVertex* freeMep) = 0;
+    };
+
+private:
+    // MEMBERS
+    const V3Graph*   m_graphp;          // Input graph of OrderLogicVertex's etc
+    V3Graph*         m_outGraphp;       // Output graph of T_MoveVertex's
+    MoveVertexMaker* m_vxMakerp;        // Factory class for T_MoveVertex's
+    Logic2Move       m_logic2move;      // Map Logic to Vertex
+    Var2Move         m_var2move;        // Map Vars to Vertex
+
+public:
+    // CONSTRUCTORS
+    ProcessMoveBuildGraph(const V3Graph* logicGraphp,  // Input graph of OrderLogicVertex etc.
+                          V3Graph* outGraphp,  // Output graph of T_MoveVertex's
+                          MoveVertexMaker* vxMakerp)
+        : m_graphp(logicGraphp),
+          m_outGraphp(outGraphp),
+          m_vxMakerp(vxMakerp) {}
+    virtual ~ProcessMoveBuildGraph() {}
+
+    // METHODS
+    void build() {
+        // How this works:
+        //  - Create a T_MoveVertex for each OrderLogicVertex.
+        //  - Following each OrderLogicVertex, search forward in the context of
+        //    its domain...
+        //    * If we encounter another OrderLogicVertex in non-exclusive
+        //      domain, make the T_MoveVertex->T_MoveVertex edge.
+        //    * If we encounter an OrderVarVertex, make a Vertex for the
+        //      (OrderVarVertex, domain) pair and continue to search
+        //      forward in the context of the same domain.  Unless we
+        //      already created that pair, in which case, we've already
+        //      done the forward search, so stop.
+
+        // For each logic node, make a T_MoveVertex
+        for (V3GraphVertex* itp = m_graphp->verticesBeginp(); itp;
+             itp=itp->verticesNextp()) {
+            if (OrderLogicVertex* lvertexp = dynamic_cast<OrderLogicVertex*>(itp)) {
+                T_MoveVertex* moveVxp =
+                    m_vxMakerp->makeVertexp(lvertexp, NULL, lvertexp->scopep(),
+                                            lvertexp->domainp());
+                if (moveVxp) {
+                    // Cross link so we can find it later
+                    m_logic2move[lvertexp] = moveVxp;
+                }
+            }
+        }
+        // Build edges between logic vertices
+        for (V3GraphVertex* itp = m_graphp->verticesBeginp(); itp;
+             itp=itp->verticesNextp()) {
+            if (OrderLogicVertex* lvertexp = dynamic_cast<OrderLogicVertex*>(itp)) {
+                T_MoveVertex* moveVxp = m_logic2move[lvertexp];
+                if (moveVxp) {
+                    iterate(moveVxp, lvertexp, lvertexp->domainp());
+                }
+            }
+        }
+    }
+
+private:
+    // Return true if moveVxp has downstream dependencies
+    bool iterate(T_MoveVertex* moveVxp, const V3GraphVertex* origVxp,
+                 const AstSenTree* domainp) {
+        bool madeDeps = false;
+        // Search forward from given original vertex, making new edges from
+        // moveVxp forward
+        for (V3GraphEdge* edgep = origVxp->outBeginp(); edgep; edgep=edgep->outNextp()) {
+            if (edgep->weight()==0) {  // Was cut
+                continue;
+            }
+            int weight = edgep->weight();
+            if (const OrderLogicVertex* toLVertexp =
+                dynamic_cast<const OrderLogicVertex*>(edgep->top())) {
+
+                // Do not construct dependencies across exclusive domains.
+                if (domainsExclusive(domainp, toLVertexp->domainp())) continue;
+
+                // Path from vertexp to a logic vertex; new edge.
+                // Note we use the last edge's weight, not some function of
+                // multiple edges
+                new OrderEdge(m_outGraphp, moveVxp,
+                              m_logic2move[toLVertexp], weight);
+                madeDeps = true;
+            } else {
+                // This is an OrderVarVertex or other vertex representing
+                // data. (Could be var, settle, or input type vertex.)
+                const V3GraphVertex* nonLogicVxp = edgep->top();
+                VxDomPair key(nonLogicVxp, domainp);
+                if (!m_var2move[key]) {
+                    const OrderEitherVertex* eithp =
+                        dynamic_cast<const OrderEitherVertex*>(nonLogicVxp);
+                    T_MoveVertex* newMoveVxp =
+                        m_vxMakerp->makeVertexp(NULL, eithp, eithp->scopep(), domainp);
+                    m_var2move[key] = newMoveVxp;
+
+                    // Find downstream logics that depend on (var, domain)
+                    if (!iterate(newMoveVxp, edgep->top(), domainp)) {
+                        // No downstream dependencies, so remove this
+                        // intermediate vertex.
+                        m_var2move[key] = NULL;
+                        m_vxMakerp->freeVertexp(newMoveVxp);
+                        continue;
+                    }
+                }
+
+                // Create incoming edge, from previous logic that writes
+                // this var, to the Vertex representing the (var,domain)
+                new OrderEdge(m_outGraphp, moveVxp, m_var2move[key], weight);
+                madeDeps = true;
+            }
+        }
+        return madeDeps;
+    }
+    VL_UNCOPYABLE(ProcessMoveBuildGraph);
+};
+
+//######################################################################
+// OrderMoveVertexMaker and related
+
+class OrderMoveVertexMaker
+    : public ProcessMoveBuildGraph<OrderMoveVertex>::MoveVertexMaker {
+    // MEMBERS
+    V3Graph* m_pomGraphp;
+    V3List<OrderMoveVertex*>* m_pomWaitingp;
+public:
+    // CONSTRUCTORS
+    OrderMoveVertexMaker(V3Graph* pomGraphp,
+                         V3List<OrderMoveVertex*>* pomWaitingp)
+        : m_pomGraphp(pomGraphp),
+          m_pomWaitingp(pomWaitingp) {}
+    // METHODS
+    OrderMoveVertex* makeVertexp(OrderLogicVertex* lvertexp,
+                                 const OrderEitherVertex*,
+                                 const AstScope* scopep,
+                                 const AstSenTree* domainp) {
+        OrderMoveVertex* resultp =
+            new OrderMoveVertex(m_pomGraphp, lvertexp);
+        resultp->domScopep(OrderMoveDomScope::findCreate(domainp, scopep));
+        resultp->m_pomWaitingE.pushBack(*m_pomWaitingp, resultp);
+        return resultp;
+    }
+    void freeVertexp(OrderMoveVertex* freeMep) {
+        freeMep->m_pomWaitingE.unlink(*m_pomWaitingp, freeMep);
+        freeMep->unlinkDelete(m_pomGraphp);
+    }
+private:
+    VL_UNCOPYABLE(OrderMoveVertexMaker);
+};
+
+class OrderMTaskMoveVertexMaker
+    : public ProcessMoveBuildGraph<MTaskMoveVertex>::MoveVertexMaker {
+    V3Graph* m_pomGraphp;
+public:
+    explicit OrderMTaskMoveVertexMaker(V3Graph* pomGraphp)
+        : m_pomGraphp(pomGraphp) {}
+    MTaskMoveVertex* makeVertexp(OrderLogicVertex* lvertexp,
+                                 const OrderEitherVertex* varVertexp,
+                                 const AstScope* scopep,
+                                 const AstSenTree* domainp) {
+        // Exclude initial/settle logic from the mtasks graph.
+        // We'll output time-zero logic separately.
+        if (domainp->hasInitial() || domainp->hasSettle()) {
+            return NULL;
+        }
+        return new MTaskMoveVertex(m_pomGraphp, lvertexp, varVertexp, scopep, domainp);
+    }
+    void freeVertexp(MTaskMoveVertex* freeMep) {
+        freeMep->unlinkDelete(m_pomGraphp);
+    }
+private:
+    VL_UNCOPYABLE(OrderMTaskMoveVertexMaker);
+};
+
+class OrderVerticesByDomainThenScope {
+    PartPtrIdMap m_ids;
+public:
+    virtual bool operator()(const V3GraphVertex* lhsp,
+                            const V3GraphVertex* rhsp) const {
+        const MTaskMoveVertex* l_vxp = dynamic_cast<const MTaskMoveVertex*>(lhsp);
+        const MTaskMoveVertex* r_vxp = dynamic_cast<const MTaskMoveVertex*>(rhsp);
+        vluint64_t l_id = m_ids.findId(l_vxp->domainp());
+        vluint64_t r_id = m_ids.findId(r_vxp->domainp());
+        if (l_id < r_id) return true;
+        if (l_id > r_id) return false;
+        l_id = m_ids.findId(l_vxp->scopep());
+        r_id = m_ids.findId(r_vxp->scopep());
+        return l_id < r_id;
+    }
+};
+
+class MTaskVxIdLessThan {
+public:
+    MTaskVxIdLessThan() {}
+    virtual ~MTaskVxIdLessThan() {}
+
+    // Sort vertex's, which must be AbstractMTask's, into a deterministic
+    // order by comparing their serial IDs.
+    virtual bool operator()(const V3GraphVertex* lhsp,
+                            const V3GraphVertex* rhsp) const {
+        const AbstractMTask* lmtaskp =
+            dynamic_cast<const AbstractLogicMTask*>(lhsp);
+        const AbstractMTask* rmtaskp =
+            dynamic_cast<const AbstractLogicMTask*>(rhsp);
+        return lmtaskp->id() < rmtaskp->id();
+    }
+};
 
 //######################################################################
 // Order class functions
@@ -463,11 +701,8 @@ private:
     bool		m_inPre;	// Underneath AstAssignPre
     bool		m_inPost;	// Underneath AstAssignPost
     OrderLogicVertex*	m_activeSenVxp;	// Sensitivity vertex
-    deque<OrderUser*>	m_orderUserps;	// All created OrderUser's for later deletion.
+    std::deque<OrderUser*>      m_orderUserps;  // All created OrderUser's for later deletion.
     // STATE... for inside process
-    OrderLoopId			m_loopIdMax;	// Maximum BeginLoop id number assigned
-    vector<OrderLoopEndVertex*> m_pmlLoopEndps;	// processInsLoop: End vertex for each color
-    vector<OrderLoopBeginVertex*> m_pomLoopMoveps;// processMoveLoop: Loops next nodes are under
     AstCFunc*			m_pomNewFuncp;	// Current function being created
     int				m_pomNewStmts;	// Statements in function being created
     V3Graph			m_pomGraph;	// Graph of logic elements to move
@@ -475,7 +710,7 @@ private:
 protected:
     friend class OrderMoveDomScope;
     V3List<OrderMoveDomScope*>  m_pomReadyDomScope;	// List of ready domain/scope pairs, by loopId
-    vector<OrderVarStdVertex*>	m_unoptflatVars;	// Vector of variables in UNOPTFLAT loop
+    std::vector<OrderVarStdVertex*>  m_unoptflatVars;   // Vector of variables in UNOPTFLAT loop
 
 private:
     // STATS
@@ -485,11 +720,7 @@ private:
     enum VarUsage { VU_NONE=0, VU_CON=1, VU_GEN=2 };
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void iterateNewStmt(AstNode* nodep) {
 	if (m_scopep) {
@@ -507,7 +738,7 @@ private:
 		new OrderEdge(&m_graph, m_activeSenVxp, m_logicVxp, WEIGHT_NORMAL);
 	    }
 	    nodep->user1p(m_modp);
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    m_logicVxp = NULL;
 	}
     }
@@ -518,36 +749,14 @@ private:
 	    m_orderUserps.push_back(newup);
 	    varscp->user1p(newup);
 	}
-	OrderUser* up = (OrderUser*)(varscp->user1p());
+        OrderUser* up = reinterpret_cast<OrderUser*>(varscp->user1p());
 	OrderVarVertex* varVxp = up->newVarUserVertex(&m_graph, m_scopep, varscp, type, createdp);
 	return varVxp;
     }
 
-    V3GraphEdge* findEndEdge(V3GraphVertex* vertexp, AstNode* errnodep, OrderLoopEndVertex*& evertexpr) {
-	// Given a vertex, find the end block corresponding to it
-	// Every vertex should have a pointer to the end block (one hopes)
-	for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep; edgep = edgep->outNextp()) {
-	    if (OrderLoopEndVertex* evertexp = dynamic_cast<OrderLoopEndVertex*>(edgep->top())) {
-		evertexpr = evertexp;
-		return edgep;
-	    }
-	}
-	errnodep->v3fatalSrc("Loop-broken vertex doesn't have pointer to LoopEndVertex: "<<vertexp);
-	return NULL;
-    }
-
-    bool isClkAssign(AstNodeAssign* nodep) {
-	if (AstVarRef* varrefp = nodep->lhsp()->castVarRef()) {
-	    if (varrefp->varp()->attrClocker() == AstVarAttrClocker::CLOCKER_YES) {
-		return true;
-	    }
-	}
-	return false;
-    }
-
     void process();
     void processCircular();
-    typedef deque<OrderEitherVertex*> VertexVec;
+    typedef std::deque<OrderEitherVertex*> VertexVec;
     void processInputs();
     void processInputsInIterate(OrderEitherVertex* vertexp, VertexVec& todoVec);
     void processInputsOutIterate(OrderEitherVertex* vertexp, VertexVec& todoVec);
@@ -556,19 +765,28 @@ private:
     void processDomainsIterate(OrderEitherVertex* vertexp);
     void processEdgeReport();
 
+    // processMove* routines schedule serial execution
     void processMove();
     void processMoveClear();
     void processMoveBuildGraph();
-    void processMoveBuildGraphIterate (OrderMoveVertex* moveVxp, V3GraphVertex* vertexp, int weightmin);
-    void processMovePrepScopes();
     void processMovePrepReady();
     void processMoveReadyOne(OrderMoveVertex* vertexp);
     void processMoveDoneOne(OrderMoveVertex* vertexp);
     void processMoveOne(OrderMoveVertex* vertexp, OrderMoveDomScope* domScopep, int level);
-    void processMoveLoopPush(OrderLoopBeginVertex* beginp);
-    void processMoveLoopPop(OrderLoopBeginVertex* beginp);
-    void processMoveLoopStmt(AstNode* newSubnodep);
-    OrderLoopId processMoveLoopCurrent();
+    AstActive* processMoveOneLogic(const OrderLogicVertex* lvertexp,
+                                   AstCFunc*& newFuncpr, int& newStmtsr);
+
+    // processMTask* routines schedule threaded execution
+    struct MTaskState {
+        typedef std::list<const OrderLogicVertex*> Logics;
+        AstMTaskBody* m_mtaskBodyp;
+        Logics m_logics;
+        ExecMTask* m_execMTaskp;
+        MTaskState() : m_mtaskBodyp(NULL), m_execMTaskp(NULL) {}
+    };
+    void processMTasks();
+    typedef enum {LOGIC_INITIAL, LOGIC_SETTLE} InitialLogicE;
+    void processMTasksInitial(InitialLogicE logic_type);
 
     string cfuncName(AstNodeModule* modp, AstSenTree* domainp, AstScope* scopep, AstNode* forWhatp) {
 	modp->user3Inc();
@@ -578,7 +796,7 @@ private:
 			  : (domainp->hasSettle() ? "_settle"
 			     : (domainp->isMulti() ? "_multiclk" : "_sequent"))));
 	name = name+"__"+scopep->nameDotless()+"__"+cvtToStr(funcnum);
-	if (v3Global.opt.profileCFuncs()) {
+        if (v3Global.opt.profCFuncs()) {
 	    name += "__PROF__"+forWhatp->fileline()->profileFuncname();
 	}
 	return name;
@@ -593,8 +811,8 @@ private:
 	    toLVtxp = dynamic_cast<OrderLogicVertex*>(edgep->top());
 	}
 	//
-	if ((fromLVtxp && fromLVtxp->nodep()->castInitial())
-	    || (toLVtxp && toLVtxp->nodep()->castInitial())) {
+        if ((fromLVtxp && VN_IS(fromLVtxp->nodep(), Initial))
+            || (toLVtxp && VN_IS(toLVtxp->nodep(), Initial))) {
 	    // IEEE does not specify ordering between initial blocks, so we can do whatever we want
 	    // We especially do not want to evaluate multiple times, so do not mark the edge circular
 	}
@@ -656,36 +874,36 @@ private:
 	m_graph.userClearVertices();
 	AstNode::user3ClearTree();
 	m_unoptflatVars.clear();
-	reportLoopVarsIterate (vertexp, vertexp->color());
+        reportLoopVarsIterate(vertexp, vertexp->color());
 	AstNode::user3ClearTree();
 	m_graph.userClearVertices();
 	// May be very large vector, so only report the "most important"
 	// elements. Up to 10 of the widest
-	cerr<<V3Error::msgPrefix()
-	    <<"     Widest candidate vars to split:"<<endl;
-	std::stable_sort (m_unoptflatVars.begin(), m_unoptflatVars.end(), OrderVarWidthCmp());
+        std::cerr<<V3Error::msgPrefix()
+                 <<"     Widest candidate vars to split:"<<endl;
+        std::stable_sort(m_unoptflatVars.begin(), m_unoptflatVars.end(), OrderVarWidthCmp());
 	int lim = m_unoptflatVars.size() < 10 ? m_unoptflatVars.size() : 10;
 	for (int i = 0; i < lim; i++) {
 	    OrderVarStdVertex* vsvertexp = m_unoptflatVars[i];
 	    AstVar* varp = vsvertexp->varScp()->varp();
-	    cerr<<V3Error::msgPrefix()<<"          "
-		<<varp->fileline()<<" "<<varp->prettyName()<<dec
-		<<", width "<<varp->width()<<", fanout "
-		<<vsvertexp->fanout()<<endl;
+            std::cerr<<V3Error::msgPrefix()<<"          "
+                     <<varp->fileline()<<" "<<varp->prettyName()<<std::dec
+                     <<", width "<<varp->width()<<", fanout "
+                     <<vsvertexp->fanout()<<endl;
 	}
 	// Up to 10 of the most fanned out
-	cerr<<V3Error::msgPrefix()
-	    <<"     Most fanned out candidate vars to split:"<<endl;
-	std::stable_sort (m_unoptflatVars.begin(), m_unoptflatVars.end(),
-			  OrderVarFanoutCmp());
+        std::cerr<<V3Error::msgPrefix()
+                 <<"     Most fanned out candidate vars to split:"<<endl;
+        std::stable_sort(m_unoptflatVars.begin(), m_unoptflatVars.end(),
+                         OrderVarFanoutCmp());
 	lim = m_unoptflatVars.size() < 10 ? m_unoptflatVars.size() : 10;
 	for (int i = 0; i < lim; i++) {
 	    OrderVarStdVertex* vsvertexp = m_unoptflatVars[i];
 	    AstVar* varp = vsvertexp->varScp()->varp();
-	    cerr<<V3Error::msgPrefix()<<"          "
-		<<varp->fileline()<<" "<<varp->prettyName()
-		<<", width "<<dec<<varp->width()
-		<<", fanout "<<vsvertexp->fanout()<<endl;
+            std::cerr<<V3Error::msgPrefix()<<"          "
+                     <<varp->fileline()<<" "<<varp->prettyName()
+                     <<", width "<<std::dec<<varp->width()
+                     <<", fanout "<<vsvertexp->fanout()<<endl;
 	}
 	m_unoptflatVars.clear();
     }
@@ -725,7 +943,7 @@ private:
     virtual void visit(AstNetlist* nodep) {
 	{
 	    AstUser4InUse	m_inuser4;	// Used only when building tree, so below
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
 	// We're finished, complete the topscopes
 	if (m_topScopep) { process(); m_topScopep=NULL; }
@@ -745,24 +963,24 @@ private:
 	m_finder.main(m_topScopep);
 	// ProcessDomainsIterate will use these when it needs to move
 	// something to a combodomain.  This saves a ton of find() operations.
-	AstSenTree* combp = new AstSenTree (nodep->fileline(),	// Gets cloned() so ok if goes out of scope
-					    new AstSenItem(nodep->fileline(), AstSenItem::Combo()));
+        AstSenTree* combp = new AstSenTree(nodep->fileline(),  // Gets cloned() so ok if goes out of scope
+                                           new AstSenItem(nodep->fileline(), AstSenItem::Combo()));
 	m_comboDomainp = m_finder.getSenTree(nodep->fileline(), combp);
 	pushDeletep(combp);  // Cleanup when done
-	AstSenTree* settlep = new AstSenTree (nodep->fileline(),  // Gets cloned() so ok if goes out of scope
-					      new AstSenItem(nodep->fileline(), AstSenItem::Settle()));
+        AstSenTree* settlep = new AstSenTree(nodep->fileline(),  // Gets cloned() so ok if goes out of scope
+                                             new AstSenItem(nodep->fileline(), AstSenItem::Settle()));
 	m_settleDomainp = m_finder.getSenTree(nodep->fileline(), settlep);
 	pushDeletep(settlep);  // Cleanup when done
 	// Fake AstSenTree we set domainp to indicate needs deletion
-	m_deleteDomainp = new AstSenTree (nodep->fileline(),
-					  new AstSenItem(nodep->fileline(), AstSenItem::Settle()));
+        m_deleteDomainp = new AstSenTree(nodep->fileline(),
+                                         new AstSenItem(nodep->fileline(), AstSenItem::Settle()));
 	pushDeletep(m_deleteDomainp);  // Cleanup when done
 	UINFO(5,"    DeleteDomain = "<<m_deleteDomainp<<endl);
 	// Base vertices
 	m_activeSenVxp = NULL;
 	m_inputsVxp = new OrderInputsVertex(&m_graph, NULL);
 	//
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	// Done topscope, erase extra user information
 	// user1p passed to next process() operation
 	AstNode::user3ClearTree();
@@ -770,7 +988,7 @@ private:
     }
     virtual void visit(AstNodeModule* nodep) {
 	m_modp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     virtual void visit(AstScope* nodep) {
@@ -780,7 +998,7 @@ private:
 	m_activeSenVxp = NULL;
 	nodep->user1p(m_modp);
 	// Iterate
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_scopep = NULL;
     }
     virtual void visit(AstActive* nodep) {
@@ -791,15 +1009,17 @@ private:
 	m_inClocked = nodep->hasClocked();
 	// Grab the sensitivity list
 	if (nodep->sensesStorep()) nodep->v3fatalSrc("Senses should have been activeTop'ed to be global!");
-	nodep->sensesp()->accept(*this);
+        iterate(nodep->sensesp());
 	// Collect statements under it
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_activep = NULL;
+        m_activeSenVxp = NULL;
+        m_inClocked = false;
     }
     virtual void visit(AstVarScope* nodep) {
-	// Create links to all input signals
-	if (m_modp->isTop() && nodep->varp()->isInput()) {
-	    OrderVarVertex* varVxp = newVarUserVertex(nodep, WV_STD);
+        // Create links to all input signals
+        if (m_modp->isTop() && nodep->varp()->isNonOutput()) {
+            OrderVarVertex* varVxp = newVarUserVertex(nodep, WV_STD);
 	    new OrderEdge(&m_graph, m_inputsVxp, varVxp, WEIGHT_INPUT);
 	}
     }
@@ -839,7 +1059,8 @@ private:
 			// clock_enable attribute: user's worring about it for us
 			con = false;
 		    }
-		    if (m_inClkAss && (varscp->varp()->attrClocker()) != AstVarAttrClocker::CLOCKER_YES) {
+                    if (m_inClkAss && (varscp->varp()->attrClocker()
+                                       != AstVarAttrClocker::CLOCKER_YES)) {
 			con = false;
 			UINFO(4, "nodep used as clock_enable "<<varscp<<" in "<<m_logicVxp->nodep()<<endl);
 		    }
@@ -867,10 +1088,12 @@ private:
 			    } else {
 				// If the lhs is a clocker, avoid marking that as circular by
 				// putting a hard edge instead of normal cuttable
-				if (varscp->varp()->attrClocker() == AstVarAttrClocker::CLOCKER_YES)
+                                if (varscp->varp()->attrClocker()
+                                    == AstVarAttrClocker::CLOCKER_YES) {
 				    new OrderEdge(&m_graph, m_logicVxp, varVxp, WEIGHT_NORMAL);
-				else
+                                } else {
 				    new OrderComboCutEdge(&m_graph, m_logicVxp, varVxp);
+                                }
 			    }
 			    // For m_inPost:
 			    //    Add edge consumed_var_POST->logic_vertex
@@ -928,7 +1151,7 @@ private:
     }
     virtual void visit(AstSenTree* nodep) {
 	// Having a node derived from the sentree isn't required for
-	// correctness, it mearly makes the graph better connected
+	// correctness, it merely makes the graph better connected
 	// and improves graph algorithmic performance
 	if (m_scopep) {	// Else TOPSCOPE's SENTREE list
 	    m_inSenTree = true;
@@ -936,7 +1159,7 @@ private:
 		if (!m_activeSenVxp) {
 		    m_activeSenVxp = new OrderLogicVertex(&m_graph, m_scopep, nodep, m_activep);
 		}
-		nodep->iterateChildren(*this);
+                iterateChildren(nodep);
 	    }
 	    m_inSenTree = false;
 	}
@@ -994,7 +1217,7 @@ private:
     //--------------------
     // Default
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
@@ -1016,30 +1239,97 @@ public:
 	m_activeSenVxp = NULL;
 	m_logicVxp = NULL;
 	m_pomNewFuncp = NULL;
-	m_loopIdMax = LOOPID_FIRST;
 	m_pomNewStmts = 0;
 	if (debug()) m_graph.debug(5); // 3 is default if global debug; we want acyc debugging
     }
     virtual ~OrderVisitor() {
 	// Stats
 	for (int type=0; type<OrderVEdgeType::_ENUM_END; type++) {
-	    if (double count = double(m_statCut[type])) {
+	    double count = double(m_statCut[type]);
+	    if (count != 0.0) {
 		V3Stats::addStat(string("Order, cut, ")+OrderVEdgeType(type).ascii(), count);
 	    }
 	}
 	// Destruction
-	for (deque<OrderUser*>::iterator it=m_orderUserps.begin(); it!=m_orderUserps.end(); ++it) {
+        for (std::deque<OrderUser*>::iterator it=m_orderUserps.begin(); it!=m_orderUserps.end(); ++it) {
 	    delete *it;
 	}
 	m_graph.debug(V3Error::debugDefault());
     }
     void main(AstNode* nodep) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
 };
 
 //######################################################################
-// Clock propagation
+// General utilities
+
+static bool domainsExclusive(const AstSenTree* fromp, const AstSenTree* top) {
+    // Return 'true' if we can prove that both 'from' and 'to' cannot both
+    // be active on the same eval pass, or false if we can't prove this.
+    //
+    // This detects the case of 'always @(posedge clk)'
+    // and 'always @(negedge clk)' being exclusive. It also detects
+    // that initial/settle blocks and post-initial blocks are exclusive.
+    //
+    // Are there any other cases we need to handle? Maybe not,
+    // because these are not exclusive:
+    //   always @(posedge A or posedge B)
+    //   always @(negedge A)
+    //
+    // ... unless you know more about A and B, which sounds hard.
+
+    bool toInitial = top->hasInitial() || top->hasSettle();
+    bool fromInitial = fromp->hasInitial() || fromp->hasSettle();
+    if (toInitial != fromInitial) {
+        return true;
+    }
+
+    const AstSenItem* fromSenListp = VN_CAST(fromp->sensesp(), SenItem);
+    const AstSenItem* toSenListp = VN_CAST(top->sensesp(), SenItem);
+    // If clk gating is ever reenabled, we may need to update this to handle
+    // AstSenGate also.
+    if (!fromSenListp) fromp->v3fatalSrc("sensitivity list item is not an AstSenItem");
+    if (!toSenListp) top->v3fatalSrc("sensitivity list item is not an AstSenItem");
+
+    if (fromSenListp->nextp()) return false;
+    if (toSenListp->nextp()) return false;
+
+    const AstNodeVarRef* fromVarrefp = fromSenListp->varrefp();
+    const AstNodeVarRef* toVarrefp = toSenListp->varrefp();
+    if (!fromVarrefp || !toVarrefp) return false;
+
+    // We know nothing about the relationship between different clocks here,
+    // so give up on proving anything.
+    if (fromVarrefp->varScopep() != toVarrefp->varScopep()) return false;
+
+    return fromSenListp->edgeType().exclusiveEdge(toSenListp->edgeType());
+}
+
+//######################################################################
+// OrderMoveDomScope methods
+
+// Check the domScope is on ready list, add if not
+inline void OrderMoveDomScope::ready(OrderVisitor* ovp) {
+    if (!m_onReadyList) {
+        m_onReadyList = true;
+        m_readyDomScopeE.pushBack(ovp->m_pomReadyDomScope, this);
+    }
+}
+
+// Mark one vertex as finished, remove from ready list if done
+inline void OrderMoveDomScope::movedVertex(OrderVisitor* ovp, OrderMoveVertex* vertexp) {
+    if (!m_onReadyList) {
+        vertexp->v3fatalSrc("Moving vertex from ready when nothing was on que as ready.");
+    }
+    if (m_readyVertices.empty()) {  // Else more work to get to later
+        m_onReadyList = false;
+        m_readyDomScopeE.unlink(ovp->m_pomReadyDomScope, this);
+    }
+}
+
+//######################################################################
+// OrderVisitor - Clock propagation
 
 void OrderVisitor::processInputs() {
     m_graph.userClearVertices();  // Vertex::user()   // 1 if input recursed, 2 if marked as input, 3 if out-edges recursed
@@ -1067,7 +1357,7 @@ void OrderVisitor::processInputsInIterate(OrderEitherVertex* vertexp, VertexVec&
     // Also, determine if this vertex is an input
     int inonly = 1;  // 0=no, 1=maybe, 2=yes until a no
     for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep=edgep->inNextp()) {
-	OrderEitherVertex* frVertexp = (OrderEitherVertex*)edgep->fromp();
+        OrderEitherVertex* frVertexp = static_cast<OrderEitherVertex*>(edgep->fromp());
 	processInputsInIterate(frVertexp, todoVec);
 	if (frVertexp->isFromInput()) {
 	    if (inonly==1) inonly = 2;
@@ -1098,18 +1388,20 @@ void OrderVisitor::processInputsOutIterate(OrderEitherVertex* vertexp, VertexVec
     // First make sure input path is fully recursed
     processInputsInIterate(vertexp, todoVec);
     // Propagate PrimaryIn through simple assignments
-    if (!vertexp->isFromInput()) v3fatalSrc("processInputsOutIterate only for input marked vertexes");
+    if (!vertexp->isFromInput()) {
+        vertexp->v3fatalSrc("processInputsOutIterate only for input marked vertexes");
+    }
     vertexp->user(3);  // out-edges processed
 
     {
 	// Propagate PrimaryIn through simple assignments, followint target of vertex
 	for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep; edgep=edgep->outNextp()) {
-	    OrderEitherVertex* toVertexp = (OrderEitherVertex*)edgep->top();
+            OrderEitherVertex* toVertexp = static_cast<OrderEitherVertex*>(edgep->top());
 	    if (OrderVarStdVertex* vvertexp = dynamic_cast<OrderVarStdVertex*>(toVertexp)) {
 		processInputsInIterate(vvertexp, todoVec);
 	    }
 	    if (OrderLogicVertex* vvertexp = dynamic_cast<OrderLogicVertex*>(toVertexp)) {
-		if (vvertexp->nodep()->castNodeAssign()) {
+                if (VN_IS(vvertexp->nodep(), NodeAssign)) {
 		    processInputsInIterate(vvertexp, todoVec);
 		}
 	    }
@@ -1118,7 +1410,7 @@ void OrderVisitor::processInputsOutIterate(OrderEitherVertex* vertexp, VertexVec
 }
 
 //######################################################################
-// Circular detection
+// OrderVisitor - Circular detection
 
 void OrderVisitor::processCircular() {
     // Take broken edges and add circular flags
@@ -1171,9 +1463,9 @@ void OrderVisitor::processSensitive() {
     // Sc sensitives are required on all inputs that go to a combo
     // block.  (Not inputs that go only to clocked blocks.)
     for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
-	if (OrderVarStdVertex* vvertexp = dynamic_cast<OrderVarStdVertex*>(itp)) {
-	    if (vvertexp->varScp()->varp()->isInput()) {
-		//UINFO(0,"  scsen "<<vvertexp<<endl);
+        if (OrderVarStdVertex* vvertexp = dynamic_cast<OrderVarStdVertex*>(itp)) {
+            if (vvertexp->varScp()->varp()->isNonOutput()) {
+                //UINFO(0,"  scsen "<<vvertexp<<endl);
 		for (V3GraphEdge* edgep = vvertexp->outBeginp(); edgep; edgep=edgep->outNextp()) {
 		    if (OrderEitherVertex* toVertexp = dynamic_cast<OrderEitherVertex*>(edgep->top())) {
 			if (edgep->weight() && toVertexp->domainp()) {
@@ -1192,7 +1484,7 @@ void OrderVisitor::processSensitive() {
 void OrderVisitor::processDomains() {
     for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
 	OrderEitherVertex* vertexp = dynamic_cast<OrderEitherVertex*>(itp);
-	UASSERT(vertexp, "Null or vertex not derived from EitherVertex\n");
+        UASSERT(vertexp, "Null or vertex not derived from EitherVertex");
 	processDomainsIterate(vertexp);
     }
 }
@@ -1204,25 +1496,25 @@ void OrderVisitor::processDomainsIterate(OrderEitherVertex* vertexp) {
     //     Combo logic may be pushed into a seq domain if all its inputs are the same domain,
     //     else, if all inputs are from flops, it's end-of-sequential code
     //     else, it's full combo code
-    if (!vertexp->inLoop()) vertexp->inLoop(LOOPID_NOTLOOPED);
     if (vertexp->domainp()) return;	// Already processed, or sequential logic
     UINFO(5,"    pdi: "<<vertexp<<endl);
     OrderVarVertex* vvertexp = dynamic_cast<OrderVarVertex*>(vertexp);
     AstSenTree* domainp = NULL;
     UASSERT(m_comboDomainp, "not preset");
-    if (vvertexp && vvertexp->varScp()->varp()->isInput()) {
-	domainp = m_comboDomainp;
+    if (vvertexp && vvertexp->varScp()->varp()->isNonOutput()) {
+        domainp = m_comboDomainp;
     }
     if (vvertexp && vvertexp->varScp()->isCircular()) {
 	domainp = m_comboDomainp;
     }
     if (!domainp) {
 	for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep = edgep->inNextp()) {
-	    OrderEitherVertex* fromVertexp = (OrderEitherVertex*)edgep->fromp();
+            OrderEitherVertex* fromVertexp = static_cast<OrderEitherVertex*>(edgep->fromp());
 	    if (edgep->weight()
 		&& fromVertexp->domainMatters()
 		) {
-		UINFO(9,"     from d="<<(void*)fromVertexp->domainp()<<" "<<fromVertexp<<endl);
+                UINFO(9,"     from d="<<cvtToHex(fromVertexp->domainp())
+                      <<" "<<fromVertexp<<endl);
 		if (!domainp  // First input to this vertex
 		    || domainp->hasSettle()	// or, we can ignore being in the settle domain
 		    || domainp->hasInitial()) {
@@ -1280,7 +1572,7 @@ void OrderVisitor::processDomainsIterate(OrderEitherVertex* vertexp) {
     //
     vertexp->domainp(domainp);
     if (vertexp->domainp()) {
-	UINFO(5,"      done d="<<(void*)vertexp->domainp()
+        UINFO(5,"      done d="<<cvtToHex(vertexp->domainp())
 	      <<(vertexp->domainp()->hasCombo()?" [COMB]":"")
 	      <<(vertexp->domainp()->isMulti()?" [MULT]":"")
 	      <<" "<<vertexp<<endl);
@@ -1288,16 +1580,16 @@ void OrderVisitor::processDomainsIterate(OrderEitherVertex* vertexp) {
 }
 
 //######################################################################
-// Move graph construction
+// OrderVisitor - Move graph construction
 
 void OrderVisitor::processEdgeReport() {
     // Make report of all signal names and what clock edges they have
     string filename = v3Global.debugFilename("order_edges.txt");
-    const VL_UNIQUE_PTR<ofstream> logp (V3File::new_ofstream(filename));
-    if (logp->fail()) v3fatalSrc("Can't write "<<filename);
+    const vl_unique_ptr<std::ofstream> logp (V3File::new_ofstream(filename));
+    if (logp->fail()) v3fatal("Can't write "<<filename);
     //Testing emitter: V3EmitV::verilogForTree(v3Global.rootp(), *logp);
 
-    deque<string> report;
+    std::deque<string> report;
 
     for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
 	if (OrderVarVertex* vvertexp = dynamic_cast<OrderVarVertex*>(itp)) {
@@ -1306,9 +1598,9 @@ void OrderVisitor::processEdgeReport() {
 	    else if (dynamic_cast<OrderVarPostVertex*>(itp)) name += " {POST}";
 	    else if (dynamic_cast<OrderVarPordVertex*>(itp)) name += " {PORD}";
 	    else if (dynamic_cast<OrderVarSettleVertex*>(itp)) name += " {STL}";
-	    ostringstream os;
-	    os.setf(ios::left);
-	    os<<"  "<<(void*)(vvertexp->varScp())<<" "<<setw(50)<<name<<" ";
+            std::ostringstream os;
+            os.setf(std::ios::left);
+            os<<"  "<<cvtToHex(vvertexp->varScp())<<" "<<std::setw(50)<<name<<" ";
 	    AstSenTree* sentreep = vvertexp->domainp();
 	    if (sentreep) V3EmitV::verilogForTree(sentreep, os);
 	    report.push_back(os.str());
@@ -1317,14 +1609,10 @@ void OrderVisitor::processEdgeReport() {
 
     *logp<<"Signals and their clock domains:"<<endl;
     stable_sort(report.begin(), report.end());
-    for (deque<string>::iterator it=report.begin(); it!=report.end(); ++it) {
+    for (std::deque<string>::iterator it=report.begin(); it!=report.end(); ++it) {
 	*logp<<(*it)<<endl;
     }
-
 }
-
-//######################################################################
-// Move graph construction
 
 void OrderVisitor::processMoveClear() {
     OrderMoveDomScope::clear();
@@ -1339,44 +1627,14 @@ void OrderVisitor::processMoveBuildGraph() {
     processMoveClear();
     m_pomGraph.userClearVertices();  // Vertex::user()   // OrderMoveVertex*, last edge added or NULL for none
 
-    // For each logic node, make a graph node
-    for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
-	if (OrderLogicVertex* lvertexp = dynamic_cast<OrderLogicVertex*>(itp)) {
-	    OrderMoveVertex* moveVxp = new OrderMoveVertex(&m_pomGraph, lvertexp);
-	    moveVxp->m_pomWaitingE.pushBack(m_pomWaiting, moveVxp);
-	    // Cross link so we can find it later
-	    lvertexp->moveVxp(moveVxp);
-	}
-    }
-    // Build edges between logic vertices
-    for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
-	if (OrderLogicVertex* lvertexp = dynamic_cast<OrderLogicVertex*>(itp)) {
-	    OrderMoveVertex* moveVxp = lvertexp->moveVxp();
-	    processMoveBuildGraphIterate(moveVxp, lvertexp, 0);
-	}
-    }
-}
-
-void OrderVisitor::processMoveBuildGraphIterate (OrderMoveVertex* moveVxp, V3GraphVertex* vertexp, int weightmin) {
-    // Search forward from given logic vertex, making new edges based on moveVxp
-    for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep; edgep=edgep->outNextp()) {
-	if (edgep->weight()!=0) { // was cut
-	    int weight = weightmin;
-	    if (weight==0 || weight>edgep->weight()) weight=edgep->weight();
-	    if (OrderLogicVertex* toLVertexp = dynamic_cast<OrderLogicVertex*>(edgep->top())) {
-		// Path from vertexp to a logic vertex; new edge
-		// Note we use the last edge's weight, not some function of multiple edges
-		new OrderEdge(&m_pomGraph, moveVxp, toLVertexp->moveVxp(), weight);
-	    }
-	    else { // Keep hunting forward for a logic node
-		processMoveBuildGraphIterate(moveVxp, edgep->top(), weight);
-	    }
-	}
-    }
+    OrderMoveVertexMaker createOrderMoveVertex(&m_pomGraph, &m_pomWaiting);
+    ProcessMoveBuildGraph<OrderMoveVertex> serialPMBG(
+        &m_graph, &m_pomGraph, &createOrderMoveVertex);
+    serialPMBG.build();
 }
 
 //######################################################################
-// Moving
+// OrderVisitor - Moving
 
 void OrderVisitor::processMove() {
     // The graph routines have already sorted the vertexes and edges into best->worst order
@@ -1391,7 +1649,6 @@ void OrderVisitor::processMove() {
     //	    	 Move logic to ordered active
     //		 Any children that have all inputs now ready move from waiting->ready graph
     //		 (This may add nodes the for loop directly above needs to detext)
-    processMovePrepScopes();
     processMovePrepReady();
 
     // New domain... another loop
@@ -1426,19 +1683,6 @@ void OrderVisitor::processMove() {
     processMoveClear();
 }
 
-void OrderVisitor::processMovePrepScopes() {
-    UINFO(5,"  MovePrepScopes\n");
-    // Create a OrderMoveDomScope every domain/scope pairing
-    for (OrderMoveVertex* vertexp = m_pomWaiting.begin(); vertexp; vertexp=vertexp->pomWaitingNextp()) {
-	AstSenTree* domainp = vertexp->logicp()->domainp();
-	AstScope* scopep = vertexp->logicp()->scopep();
-	OrderLoopId inLoop = vertexp->logicp()->inLoop();
-	// Create the dom pairing for later lookup
-	OrderMoveDomScope* domScopep = OrderMoveDomScope::findCreate(inLoop, domainp, scopep);
-	vertexp->domScopep(domScopep);
-    }
-}
-
 void OrderVisitor::processMovePrepReady() {
     // Make list of ready nodes
     UINFO(5,"  MovePrepReady\n");
@@ -1457,22 +1701,30 @@ void OrderVisitor::processMoveReadyOne(OrderMoveVertex* vertexp) {
     vertexp->setReady();
     // Remove node from waiting list
     vertexp->m_pomWaitingE.unlink(m_pomWaiting, vertexp);
-    // Add to ready list (indexed by domain and scope)
-    vertexp->m_readyVerticesE.pushBack(vertexp->domScopep()->m_readyVertices, vertexp);
-    vertexp->domScopep()->ready (this);
+    if (vertexp->logicp()) {
+        // Add to ready list (indexed by domain and scope)
+        vertexp->m_readyVerticesE.pushBack(vertexp->domScopep()->m_readyVertices, vertexp);
+        vertexp->domScopep()->ready(this);
+    } else {
+        // vertexp represents a non-logic vertex.
+        // Recurse to mark its following neighbors ready.
+        processMoveDoneOne(vertexp);
+    }
 }
 
 void OrderVisitor::processMoveDoneOne(OrderMoveVertex* vertexp) {
     // Move one node from ready to completion
     vertexp->setMoved();
     // Unlink from ready lists
-    vertexp->m_readyVerticesE.unlink(vertexp->domScopep()->m_readyVertices, vertexp);
-    vertexp->domScopep()->movedVertex (this, vertexp);
+    if (vertexp->logicp()) {
+        vertexp->m_readyVerticesE.unlink(vertexp->domScopep()->m_readyVertices, vertexp);
+        vertexp->domScopep()->movedVertex(this, vertexp);
+    }
     // Don't need to add it to another list, as we're done with it
     // Mark our outputs as one closer to ready
     for (V3GraphEdge* edgep = vertexp->outBeginp(), *nextp; edgep; edgep=nextp) {
 	nextp = edgep->outNextp();
-	OrderMoveVertex* toVertexp = (OrderMoveVertex*)edgep->top();
+        OrderMoveVertex* toVertexp = static_cast<OrderMoveVertex*>(edgep->top());
 	UINFO(9,"          Clear to "<<(toVertexp->inEmpty()?"[EMP] ":"      ")
 	      <<toVertexp<<endl);
 	// Delete this edge
@@ -1486,44 +1738,56 @@ void OrderVisitor::processMoveDoneOne(OrderMoveVertex* vertexp) {
 }
 
 void OrderVisitor::processMoveOne(OrderMoveVertex* vertexp, OrderMoveDomScope* domScopep, int level) {
-    UASSERT(vertexp->domScopep() == domScopep, "Domain mismatch; list misbuilt?\n");
-    OrderLogicVertex* lvertexp = vertexp->logicp();
+    if (vertexp->domScopep() != domScopep) {
+        vertexp->v3fatalSrc("Domain mismatch; list misbuilt?");
+    }
+    const OrderLogicVertex* lvertexp = vertexp->logicp();
+    const AstScope* scopep = lvertexp->scopep();
+    UINFO(5,"    POSmove l"<<std::setw(3)<<level<<" d="<<cvtToHex(lvertexp->domainp())
+          <<" s="<<cvtToHex(scopep)<<" "<<lvertexp<<endl);
+    AstActive* newActivep = processMoveOneLogic(lvertexp, m_pomNewFuncp/*ref*/,
+                                                m_pomNewStmts/*ref*/);
+    if (newActivep) m_scopetopp->addActivep(newActivep);
+    processMoveDoneOne(vertexp);
+}
+
+AstActive* OrderVisitor::processMoveOneLogic(const OrderLogicVertex* lvertexp,
+                                             AstCFunc*& newFuncpr,
+                                             int& newStmtsr) {
+    AstActive* activep = NULL;
     AstScope* scopep = lvertexp->scopep();
-    UINFO(5,"    POSmove l"<<setw(3)<<level<<" d="<<(void*)(lvertexp->domainp())
-	  <<" s="<<(void*)(scopep)<<" "<<lvertexp<<endl);
     AstSenTree* domainp = lvertexp->domainp();
     AstNode* nodep = lvertexp->nodep();
-    AstNodeModule* modp = scopep->user1p()->castNodeModule();  UASSERT(modp,"NULL"); // Stashed by visitor func
-    if (nodep->castUntilStable()) {
+    AstNodeModule* modp = VN_CAST(scopep->user1p(), NodeModule);  UASSERT(modp,"NULL");  // Stashed by visitor func
+    if (VN_IS(nodep, UntilStable)) {
 	nodep->v3fatalSrc("Not implemented");
     }
-    else if (nodep->castSenTree()) {
+    else if (VN_IS(nodep, SenTree)) {
 	// Just ignore sensitivities, we'll deal with them when we move statements that need them
     }
     else {  // Normal logic
 	// Make or borrow a CFunc to contain the new statements
-	if (v3Global.opt.profileCFuncs()
+        if (v3Global.opt.profCFuncs()
 	    || (v3Global.opt.outputSplitCFuncs()
-		&& v3Global.opt.outputSplitCFuncs() < m_pomNewStmts)) {
+                && v3Global.opt.outputSplitCFuncs() < newStmtsr)) {
 	    // Put every statement into a unique function to ease profiling or reduce function size
-	    m_pomNewFuncp = NULL;
+            newFuncpr = NULL;
 	}
-	if (!m_pomNewFuncp && domainp != m_deleteDomainp) {
+        if (!newFuncpr && domainp != m_deleteDomainp) {
 	    string name = cfuncName(modp, domainp, scopep, nodep);
-	    m_pomNewFuncp = new AstCFunc(nodep->fileline(), name, scopep);
-	    m_pomNewFuncp->argTypes(EmitCBaseVisitor::symClassVar());
-	    m_pomNewFuncp->symProlog(true);
-	    m_pomNewStmts = 0;
-	    if (domainp->hasInitial() || domainp->hasSettle()) m_pomNewFuncp->slow(true);
-	    scopep->addActivep(m_pomNewFuncp);
+            newFuncpr = new AstCFunc(nodep->fileline(), name, scopep);
+            newFuncpr->argTypes(EmitCBaseVisitor::symClassVar());
+            newFuncpr->symProlog(true);
+            newStmtsr = 0;
+            if (domainp->hasInitial() || domainp->hasSettle()) newFuncpr->slow(true);
+            scopep->addActivep(newFuncpr);
 	    // Where will we be adding the call?
-	    AstActive* callunderp = new AstActive(nodep->fileline(), name, domainp);
-	    processMoveLoopStmt(callunderp);
+            activep = new AstActive(nodep->fileline(), name, domainp);
 	    // Add a top call to it
-	    AstCCall* callp = new AstCCall(nodep->fileline(), m_pomNewFuncp);
+            AstCCall* callp = new AstCCall(nodep->fileline(), newFuncpr);
 	    callp->argTypes("vlSymsp");
-	    callunderp->addStmtsp(callp);
-	    UINFO(6,"      New "<<m_pomNewFuncp<<endl);
+            activep->addStmtsp(callp);
+            UINFO(6,"      New "<<newFuncpr<<endl);
 	}
 
 	// Move the logic to the function we're creating
@@ -1532,69 +1796,186 @@ void OrderVisitor::processMoveOne(OrderMoveVertex* vertexp, OrderMoveDomScope* d
 	    UINFO(4," Ordering deleting pre-settled "<<nodep<<endl);
 	    pushDeletep(nodep); VL_DANGLING(nodep);
 	} else {
-	    m_pomNewFuncp->addStmtsp(nodep);
+            newFuncpr->addStmtsp(nodep);
 	    if (v3Global.opt.outputSplitCFuncs()) {
 		// Add in the number of nodes we're adding
 		EmitCBaseCounterVisitor visitor(nodep);
-		m_pomNewStmts += visitor.count();
+                newStmtsr += visitor.count();
 	    }
 	}
     }
-    processMoveDoneOne (vertexp);
+    return activep;
 }
 
-inline void OrderVisitor::processMoveLoopPush(OrderLoopBeginVertex* beginp) {
-    UINFO(6,"      LoopPush  "<<beginp<<endl);
-    m_pomLoopMoveps.push_back(beginp);
-}
-
-inline void OrderVisitor::processMoveLoopPop(OrderLoopBeginVertex* beginp) {
-    UINFO(6,"      LoopPop   "<<beginp<<endl);
-    if (m_pomLoopMoveps.empty()) beginp->nodep()->v3fatalSrc("processMoveLoopPop with no push'ed loops");
-    OrderLoopBeginVertex* topBeginp = m_pomLoopMoveps.back();
-    if (topBeginp != beginp) beginp->nodep()->v3fatalSrc("processMoveLoopPop had different vertex then one expected, got="<<topBeginp<<" exp="<<beginp<<endl);
-    m_pomLoopMoveps.pop_back();
-}
-
-inline void OrderVisitor::processMoveLoopStmt(AstNode* newSubnodep) {
-    if (m_pomLoopMoveps.empty()) {
-	// Not in any loops, statements go into main body
-	m_scopetopp->addActivep(newSubnodep);
-    } else {
-	// In a loop, put statements under appropriate loop body
-	OrderLoopBeginVertex* topBeginp = m_pomLoopMoveps.back();
-	topBeginp->untilp()->addBodysp(newSubnodep);
+void OrderVisitor::processMTasksInitial(InitialLogicE logic_type) {
+    // Emit initial/settle logic. Initial blocks won't be part of the
+    // mtask partition, aren't eligible for parallelism.
+    //
+    int initStmts = 0;
+    AstCFunc* initCFunc = NULL;
+    AstScope* lastScopep = NULL;
+    for (V3GraphVertex* initVxp = m_graph.verticesBeginp();
+         initVxp; initVxp = initVxp->verticesNextp()) {
+        OrderLogicVertex* initp = dynamic_cast<OrderLogicVertex*>(initVxp);
+        if (!initp) continue;
+        if ((logic_type == LOGIC_INITIAL)
+            && !initp->domainp()->hasInitial()) continue;
+        if ((logic_type == LOGIC_SETTLE)
+            && !initp->domainp()->hasSettle()) continue;
+        if (initp->scopep() != lastScopep) {
+            // Start new cfunc, don't let the cfunc cross scopes
+            initCFunc = NULL;
+            lastScopep = initp->scopep();
+        }
+        AstActive* newActivep = processMoveOneLogic(initp, initCFunc/*ref*/, initStmts/*ref*/);
+        if (newActivep) m_scopetopp->addActivep(newActivep);
     }
 }
 
-inline OrderLoopId OrderVisitor::processMoveLoopCurrent() {
-    // Return loopID we're currently processing
-    if (m_pomLoopMoveps.empty()) {
-	return LOOPID_NOTLOOPED;
-    } else {
-	OrderLoopBeginVertex* topBeginp = m_pomLoopMoveps.back();
-	return topBeginp->loopId();  // Not inLoop, the begin is in the upper subloop.
-    }
-}
+void OrderVisitor::processMTasks() {
+    // For nondeterminism debug:
+    V3Partition::hashGraphDebug(&m_graph, "V3Order's m_graph");
 
-inline void OrderMoveDomScope::ready(OrderVisitor* ovp) {	// Check the domScope is on ready list, add if not
-    if (!m_onReadyList) {
-	m_onReadyList = true;
-	UASSERT (inLoop()!=0, "Loop# 0 is illegal, perhaps should be LOOPID_NOTLOOPED?");
-	m_readyDomScopeE.pushBack(ovp->m_pomReadyDomScope, this);
-    }
-}
+    processMTasksInitial(LOGIC_INITIAL);
+    processMTasksInitial(LOGIC_SETTLE);
 
-inline void OrderMoveDomScope::movedVertex(OrderVisitor* ovp, OrderMoveVertex* vertexp) {	// Mark one vertex as finished, remove from ready list if done
-    UASSERT(m_onReadyList, "Moving vertex from ready when nothing was on que as ready.");
-    if (m_readyVertices.empty()) {	// Else more work to get to later
-	m_onReadyList = false;
-	m_readyDomScopeE.unlink(ovp->m_pomReadyDomScope, this);
+    // We already produced a graph of every var, input, logic, and settle
+    // block and all dependencies; this is 'm_graph'.
+    //
+    // Now, starting from m_graph, make a slightly-coarsened graph representing
+    // only logic, and discarding edges we know we can ignore.
+    // This is quite similar to the 'm_pomGraph' of the serial code gen:
+    V3Graph logicGraph;
+    OrderMTaskMoveVertexMaker create_mtask_vertex(&logicGraph);
+    ProcessMoveBuildGraph<MTaskMoveVertex> mtask_pmbg(
+        &m_graph, &logicGraph, &create_mtask_vertex);
+    mtask_pmbg.build();
+
+    // Needed? We do this for m_pomGraph in serial mode, so do it here too:
+    logicGraph.removeRedundantEdges(&V3GraphEdge::followAlwaysTrue);
+
+    // Partition logicGraph into LogicMTask's. The partitioner will annotate
+    // each vertex in logicGraph with a 'color' which is really an mtask ID
+    // in this context.
+    V3Partition partitioner(&logicGraph);
+    V3Graph mtasks;
+    partitioner.go(&mtasks);
+
+    vl_unordered_map<unsigned /*mtask id*/, MTaskState> mtaskStates;
+
+    // Iterate through the entire logicGraph. For each logic node,
+    // attach it to a per-MTask ordered list of logic nodes.
+    // This is the order we'll execute logic nodes within the MTask.
+    //
+    // MTasks may span scopes and domains, so sort by both here:
+    GraphStream<OrderVerticesByDomainThenScope> emit_logic(&logicGraph);
+    const V3GraphVertex* moveVxp;
+    while ((moveVxp = emit_logic.nextp())) {
+        const MTaskMoveVertex* movep =
+            dynamic_cast<const MTaskMoveVertex*>(moveVxp);
+        unsigned mtaskId = movep->color();
+        UASSERT(mtaskId > 0,
+                "Every MTaskMoveVertex should have an mtask assignment >0");
+        if (movep->logicp()) {
+            // Add this logic to the per-mtask order
+            mtaskStates[mtaskId].m_logics.push_back(movep->logicp());
+
+            // Since we happen to be iterating over every logic node,
+            // take this opportunity to annotate each AstVar with the id's
+            // of mtasks that consume it and produce it. We'll use this
+            // information in V3EmitC when we lay out var's in memory.
+            const OrderLogicVertex* logicp = movep->logicp();
+            for (const V3GraphEdge* edgep = logicp->inBeginp();
+                 edgep; edgep = edgep->inNextp()) {
+                const OrderVarVertex* pre_varp =
+                    dynamic_cast<const OrderVarVertex*>(edgep->fromp());
+                if (!pre_varp) continue;
+                AstVar* varp = pre_varp->varScp()->varp();
+                // varp depends on logicp, so logicp produces varp,
+                // and vice-versa below
+                varp->addProducingMTaskId(mtaskId);
+            }
+            for (const V3GraphEdge* edgep = logicp->outBeginp();
+                 edgep; edgep = edgep->outNextp()) {
+                const OrderVarVertex* post_varp
+                    = dynamic_cast<const OrderVarVertex*>(edgep->top());
+                if (!post_varp) continue;
+                AstVar* varp = post_varp->varScp()->varp();
+                varp->addConsumingMTaskId(mtaskId);
+            }
+            // TODO? We ignore IO vars here, so those will have empty mtask
+            // signatures. But we could also give those mtask signatures.
+        }
+    }
+
+    // Create the AstExecGraph node which represents the execution
+    // of the MTask graph.
+    FileLine* rootFlp = v3Global.rootp()->fileline();
+    AstExecGraph* execGraphp = new AstExecGraph(rootFlp);
+    m_scopetopp->addActivep(execGraphp);
+    v3Global.rootp()->execGraphp(execGraphp);
+
+    // Create CFuncs and bodies for each MTask.
+    GraphStream<MTaskVxIdLessThan> emit_mtasks(&mtasks);
+    const V3GraphVertex* mtaskVxp;
+    while ((mtaskVxp = emit_mtasks.nextp())) {
+        const AbstractLogicMTask* mtaskp =
+            dynamic_cast<const AbstractLogicMTask*>(mtaskVxp);
+
+        // Create a body for this mtask
+        AstMTaskBody* bodyp = new AstMTaskBody(rootFlp);
+        MTaskState& state = mtaskStates[mtaskp->id()];
+        state.m_mtaskBodyp = bodyp;
+
+        // Create leaf CFunc's to run this mtask's logic,
+        // and create a set of AstActive's to call those CFuncs.
+        // Add the AstActive's into the AstMTaskBody.
+        const AstSenTree* last_domainp = NULL;
+        AstCFunc* leafCFuncp = NULL;
+        int leafStmts = 0;
+        for (MTaskState::Logics::iterator it = state.m_logics.begin();
+             it != state.m_logics.end(); ++it) {
+            const OrderLogicVertex* logicp = *it;
+            if (logicp->domainp() != last_domainp) {
+                // Start a new leaf function.
+                leafCFuncp = NULL;
+            }
+            last_domainp = logicp->domainp();
+
+            AstActive* newActivep = processMoveOneLogic(logicp, leafCFuncp/*ref*/, leafStmts/*ref*/);
+            if (newActivep) bodyp->addStmtsp(newActivep);
+        }
+
+        // Translate the LogicMTask graph into the corresponding ExecMTask
+        // graph, which will outlive V3Order and persist for the remainder
+        // of verilator's processing.
+        // - The LogicMTask graph points to MTaskMoveVertex's
+        //   and OrderLogicVertex's which are ephemeral to V3Order.
+        // - The ExecMTask graph and the AstMTaskBody's produced here
+        //   persist until code generation time.
+        state.m_execMTaskp =
+            new ExecMTask(execGraphp->mutableDepGraphp(),
+                          bodyp, mtaskp->id());
+        // Cross-link each ExecMTask and MTaskBody
+        //  Q: Why even have two objects?
+        //  A: One is an AstNode, the other is a GraphVertex,
+        //     to combine them would involve multiple inheritance...
+        state.m_mtaskBodyp->execMTaskp(state.m_execMTaskp);
+        for (V3GraphEdge* inp = mtaskp->inBeginp();
+             inp; inp = inp->inNextp()) {
+            const V3GraphVertex* fromVxp = inp->fromp();
+            const AbstractLogicMTask* fromp =
+                dynamic_cast<const AbstractLogicMTask*>(fromVxp);
+            MTaskState& fromState = mtaskStates[fromp->id()];
+            new V3GraphEdge(execGraphp->mutableDepGraphp(),
+                            fromState.m_execMTaskp, state.m_execMTaskp, 1);
+        }
+        execGraphp->addMTaskBody(bodyp);
     }
 }
 
 //######################################################################
-// Top processing
+// OrderVisitor - Top processing
 
 void OrderVisitor::process() {
     // Dump data
@@ -1622,21 +2003,26 @@ void OrderVisitor::process() {
     UINFO(2,"  Process Circulars...\n");
     processCircular();  // must be before processDomains
 
-    // Assign logic verticesto new domains
+    // Assign logic vertices to new domains
     UINFO(2,"  Domains...\n");
     processDomains();
     m_graph.dumpDotFilePrefixed("orderg_domain");
 
     if (debug() && v3Global.opt.dumpTree()) processEdgeReport();
 
-    UINFO(2,"  Construct Move Graph...\n");
-    processMoveBuildGraph();
-    if (debug()>=4) m_pomGraph.dumpDotFilePrefixed("ordermv_start");  // Different prefix (ordermv) as it's not the same graph
-    m_pomGraph.removeRedundantEdges(&V3GraphEdge::followAlwaysTrue);
-    m_pomGraph.dumpDotFilePrefixed("ordermv_simpl");
+    if (!v3Global.opt.mtasks()) {
+        UINFO(2,"  Construct Move Graph...\n");
+        processMoveBuildGraph();
+        if (debug()>=4) m_pomGraph.dumpDotFilePrefixed("ordermv_start");  // Different prefix (ordermv) as it's not the same graph
+        m_pomGraph.removeRedundantEdges(&V3GraphEdge::followAlwaysTrue);
+        if (debug()>=4) m_pomGraph.dumpDotFilePrefixed("ordermv_simpl");
 
-    UINFO(2,"  Move...\n");
-    processMove();
+        UINFO(2,"  Move...\n");
+        processMove();
+    } else {
+        UINFO(2,"  Set up mtasks...\n");
+        processMTasks();
+    }
 
     // Any SC inputs feeding a combo domain must be marked, so we can make them sc_sensitive
     UINFO(2,"  Sensitive...\n");
@@ -1645,9 +2031,9 @@ void OrderVisitor::process() {
     // Dump data
     m_graph.dumpDotFilePrefixed("orderg_done");
     if (0 && debug()) {
-	string dfilename = v3Global.opt.makeDir()+"/"+v3Global.opt.prefix()+"_INT_order.tree";
-	const VL_UNIQUE_PTR<ofstream> logp (V3File::new_ofstream(dfilename));
-	if (logp->fail()) v3fatalSrc("Can't write "<<dfilename);
+	string dfilename = v3Global.opt.makeDir()+"/"+v3Global.opt.prefix()+"_INT_order";
+        const vl_unique_ptr<std::ofstream> logp (V3File::new_ofstream(dfilename));
+        if (logp->fail()) v3fatal("Can't write "<<dfilename);
 	m_graph.dump(*logp);
     }
 }
@@ -1657,8 +2043,10 @@ void OrderVisitor::process() {
 
 void V3Order::orderAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    OrderClkMarkVisitor markVisitor(nodep);
-    OrderVisitor visitor;
-    visitor.main(nodep);
-    V3Global::dumpCheckGlobalTree("order.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        OrderClkMarkVisitor markVisitor(nodep);
+        OrderVisitor visitor;
+        visitor.main(nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("order", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

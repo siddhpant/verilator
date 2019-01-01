@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,18 +20,18 @@
 
 #ifndef _V3FileLine_H_
 #define _V3FileLine_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
-#include <string>
-#include <iostream>
+
+#include "V3Error.h"
+#include "V3LangCode.h"
+
 #include <sstream>
 #include <bitset>
 #include <map>
 #include <set>
 #include <deque>
-
-#include "V3Error.h"
-#include "V3LangCode.h"
 
 //######################################################################
 
@@ -43,12 +43,12 @@ class FileLine;
 //! source file (each with its own unique filename number).
 class FileLineSingleton {
     // TYPES
-    typedef map<string,int> FileNameNumMap;
-    typedef map<string,V3LangCode> FileLangNumMap;
+    typedef std::map<string,int> FileNameNumMap;
+    typedef std::map<string,V3LangCode> FileLangNumMap;
     // MEMBERS
     FileNameNumMap	m_namemap;	// filenameno for each filename
-    deque<string>	m_names;	// filename text for each filenameno
-    deque<V3LangCode>	m_languages;	// language for each filenameno
+    std::deque<string>  m_names;        // filename text for each filenameno
+    std::deque<V3LangCode>      m_languages;    // language for each filenameno
     // COSNTRUCTORS
     FileLineSingleton() { }
     ~FileLineSingleton() { }
@@ -60,7 +60,7 @@ protected:
     const V3LangCode numberToLang(int filenameno) const { return m_languages[filenameno]; }
     void numberToLang(int filenameno, const V3LangCode& l) { m_languages[filenameno] = l; }
     void clear() { m_namemap.clear(); m_names.clear(); m_languages.clear(); }
-    void fileNameNumMapDumpXml(ostream& os);
+    void fileNameNumMapDumpXml(std::ostream& os);
     static const string filenameLetters(int fileno);
 };
 
@@ -72,13 +72,13 @@ protected:
 class FileLine {
     int		m_lineno;
     int		m_filenameno;
-    bitset<V3ErrorCode::_ENUM_MAX>	m_warnOn;
+    std::bitset<V3ErrorCode::_ENUM_MAX> m_warnOn;
 
 public:
     // by Kris,
-    static set<int>    m_igndef;    // to record preproc error lines
+    static std::set<int>    m_igndef;    // to record preproc error lines
     static bool        m_ignmod;    // to ignore submodule file
-    static set<string> m_ignunused; // to ignore unused warnings
+    static std::set<string> m_ignunused; // to ignore unused warnings
 
 private:
     struct EmptySecret {};
@@ -98,19 +98,19 @@ protected:
     friend class V3PreLex;
     friend class V3PreProcImp;
     void lineno(int num) { m_lineno = num; }
-    void language (V3LangCode lang) { singleton().numberToLang(m_filenameno, lang); }
+    void language(V3LangCode lang) { singleton().numberToLang(m_filenameno, lang); }
     void filename(const string& name) { m_filenameno = singleton().nameToNumber(name); }
     void lineDirective(const char* textp, int& enterExitRef);
     void linenoInc() { m_lineno++; }
     void linenoIncInPlace() { m_lineno++; }
     FileLine* copyOrSameFileLine();
 public:
-    FileLine (const string& filename, int lineno) {
+    FileLine(const string& filename, int lineno) {
 	m_lineno=lineno; m_filenameno = singleton().nameToNumber(filename);
 	m_warnOn=defaultFileLine().m_warnOn; }
-    explicit FileLine (FileLine* fromp) {
+    explicit FileLine(FileLine* fromp) {
 	m_lineno=fromp->m_lineno; m_filenameno = fromp->m_filenameno; m_warnOn=fromp->m_warnOn; }
-    explicit FileLine (EmptySecret);
+    explicit FileLine(EmptySecret);
     ~FileLine() { }
     FileLine* create(const string& filename, int lineno) { return new FileLine(filename,lineno); }
     FileLine* create(int lineno) { return create(filename(), lineno); }
@@ -120,19 +120,19 @@ public:
     static void operator delete(void* obj, size_t size);
 #endif
 
-    int lineno () const { return m_lineno; }
-    V3LangCode language () const { return singleton().numberToLang(m_filenameno); }
+    int lineno() const { return m_lineno; }
+    V3LangCode language() const { return singleton().numberToLang(m_filenameno); }
     string ascii() const;
-    const string filename () const { return singleton().numberToName(m_filenameno); }
+    const string filename() const { return singleton().numberToName(m_filenameno); }
     const string filenameLetters() const { return singleton().filenameLetters(m_filenameno); }
-    const string filebasename () const;
-    const string filebasenameNoExt () const;
+    const string filebasename() const;
+    const string filebasenameNoExt() const;
     const string profileFuncname() const;
     const string xml() const { return "fl=\""+filenameLetters()+cvtToStr(lineno())+"\""; }
-    string lineDirectiveStrg(int enter_exit_level) const;
+    string lineDirectiveStrg(int enterExit) const;
     void warnOn(V3ErrorCode code, bool flag) { m_warnOn.set(code,flag); }	// Turn on/off warning messages on this line.
     void warnOff(V3ErrorCode code, bool flag) { warnOn(code,!flag); }
-    bool warnOff(const string& code, bool flag);  // Returns 1 if ok
+    bool warnOff(const string& msg, bool flag);  // Returns 1 if ok
     bool warnIsOff(V3ErrorCode code) const;
     void warnLintOff(bool flag);
     void warnStyleOff(bool flag);
@@ -154,7 +154,7 @@ public:
 	defaultFileLine().warnOff(code, flag); }
     static bool globalWarnOff(const string& code, bool flag) {
 	return defaultFileLine().warnOff(code, flag); }
-    static void fileNameNumMapDumpXml(ostream& os) {
+    static void fileNameNumMapDumpXml(std::ostream& os) {
 	singleton().fileNameNumMapDumpXml(os); }
 
     // METHODS - Called from netlist
@@ -166,12 +166,17 @@ public:
     void modifyWarnOff(V3ErrorCode code, bool flag) { warnOff(code,flag); }
 
     // OPERATORS
-    void v3errorEnd(ostringstream& str);
+    void v3errorEnd(std::ostringstream& str);
+    void v3errorEndFatal(std::ostringstream& str);
     string warnMore() const;
     inline bool operator==(FileLine rhs) const {
 	return (m_lineno==rhs.m_lineno && m_filenameno==rhs.m_filenameno && m_warnOn==rhs.m_warnOn);
     }
+private:
+    void v3errorEndFatalGuts(std::ostringstream& str);
 };
-ostream& operator<<(ostream& os, FileLine* fileline);
+std::ostream& operator<<(std::ostream& os, FileLine* fileline);
+
+inline void FileLine::v3errorEndFatal(std::ostringstream& str) { v3errorEnd(str); assert(0); }
 
 #endif // Guard

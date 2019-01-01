@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,13 +20,14 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cmath>
-#include <cstdio>
-#include <cstdarg>
-#include <algorithm>
-#include <iomanip>
+
 #include "V3Global.h"
 #include "V3Number.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdarg>
+#include <iomanip>
 
 #define MAX_SPRINTF_DOUBLE_SIZE 100  // Maximum characters with a sprintf %e/%f/%g (probably < 30)
 
@@ -51,7 +52,7 @@ V3Number::V3Number(VerilogStringLiteral, FileLine* fileline, const string& str) 
     opCleanThis(true);
 }
 
-V3Number::V3Number (FileLine* fileline, const char* sourcep) {
+V3Number::V3Number(FileLine* fileline, const char* sourcep) {
     init(fileline, 0);
     const char* value_startp = sourcep;
     for (const char* cp=sourcep; *cp; cp++) {
@@ -71,7 +72,7 @@ V3Number::V3Number (FileLine* fileline, const char* sourcep) {
 	    if (*cp != '_') *wp++ = *cp;
 	}
 	*wp++ = '\0';
-	while (*cp && *cp == '_') cp++;
+	while (*cp == '_') cp++;
 	if (*cp && tolower(*cp)=='s') {
 	    cp++; isSigned(true);
 	}
@@ -139,6 +140,12 @@ V3Number::V3Number (FileLine* fileline, const char* sourcep) {
 		    this->opAdd(product,addend);
 		    if (product.bitsValue(width(), 4)) {  // Overflowed
 			m_fileline->v3error("Too many digits for "<<width()<<" bit number: "<<sourcep);
+			if (!m_sized) {
+			    static int warned = false;
+			    if (!warned++) {
+				m_fileline->v3error("As that number was unsized ('d...) it is limited to 32 bits (IEEE 2017 5.7.1)");
+			    }
+			}
 			while (*(cp+1)) cp++;  // Skip ahead so don't get multiple warnings
 		    }
 		}
@@ -358,7 +365,7 @@ V3Number& V3Number::setMask(int nbits) {
 // ACCESSORS - as strings
 
 string V3Number::ascii(bool prefixed, bool cleanVerilog) const {
-    ostringstream out;
+    std::ostringstream out;
 
     if (isDouble()) {
 	out.precision(17);
@@ -446,7 +453,7 @@ bool V3Number::displayedFmtLegal(char format) {
     case 's': return true;
     case 't': return true;
     case 'u': return true; // Packed 2-state
-    case 'v': return true; // Strength 
+    case 'v': return true; // Strength
     case 'x': return true;
     case 'z': return true; // Packed 4-state
     case '@': return true; // Packed string
@@ -483,7 +490,7 @@ string V3Number::displayed(FileLine*fl, const string& vformat) const {
 	while ((bit%3)!=2) bit++;
 	for (; bit>0; bit -= 3) {
 	    int v = bitsValue(bit-2, 3);
-	    str += (char)('0'+v);
+            str += static_cast<char>('0' + v);
 	}
 	return str;
     }
@@ -494,8 +501,8 @@ string V3Number::displayed(FileLine*fl, const string& vformat) const {
 	while ((bit%4)!=3) bit++;
 	for (; bit>0; bit -= 4) {
 	    int v = bitsValue(bit-3, 4);
-	    if (v>=10) str += (char)('a'+v-10);
-	    else str += (char)('0'+v);
+            if (v>=10) str += static_cast<char>('a' + v - 10);
+            else str += static_cast<char>('0' + v);
 	}
 	return str;
     }
@@ -514,8 +521,8 @@ string V3Number::displayed(FileLine*fl, const string& vformat) const {
 	for (; bit>=0; bit -= 8) {
 	    int v = bitsValue(bit-7, 8);
 	    if (!start || v) {
-		str += (char)((v==0)?' ':v);
-		start = false;	// Drop leading 0s
+                str += static_cast<char>((v==0) ? ' ' : v);
+                start = false;  // Drop leading 0s
 	    } else {
 		if (fmtsize != "0") str += ' ';
 	    }
@@ -533,20 +540,24 @@ string V3Number::displayed(FileLine*fl, const string& vformat) const {
 	    if (issigned) dchars++;  // space for sign
 	    fmtsize = cvtToStr(int(dchars));
 	}
-	if (width() > 64) {
-	    fl->v3error("Unsupported: $display-like format of decimal of > 64 bit results (use hex format instead)");
-	    return "ERR";
-	}
-	if (issigned) {
-	    str = cvtToStr(toSQuad());
-	} else {
-	    str = cvtToStr(toUQuad());
-	}
+        if (issigned) {
+            if (width() > 64) {
+                str = toDecimalS();
+            } else {
+                str = cvtToStr(toSQuad());
+            }
+        } else {
+            if (width() > 64) {
+                str = toDecimalU();
+            } else {
+                str = cvtToStr(toUQuad());
+            }
+        }
 	int intfmtsize = atoi(fmtsize.c_str());
 	bool zeropad = fmtsize.length()>0 && fmtsize[0]=='0';
-	while ((int)(str.length()) < intfmtsize) {
-	    if (zeropad) str = "0"+str;
-	    else str = " "+str;
+        while (static_cast<int>(str.length()) < intfmtsize) {
+            if (zeropad) str.insert(0, "0");
+            else str.insert(0, " ");
 	}
 	return str;
     }
@@ -561,23 +572,23 @@ string V3Number::displayed(FileLine*fl, const string& vformat) const {
     // 'p'   // Packed - converted to another code by V3Width
     case 'u': {  // Packed 2-state
 	for (int i=0; i<words(); i++) {
-	    str += (char)((m_value[i] >> 0) & 0xff);
-	    str += (char)((m_value[i] >> 8) & 0xff);
-	    str += (char)((m_value[i] >> 16) & 0xff);
-	    str += (char)((m_value[i] >> 24) & 0xff);
+            str += static_cast<char>((m_value[i] >> 0) & 0xff);
+            str += static_cast<char>((m_value[i] >> 8) & 0xff);
+            str += static_cast<char>((m_value[i] >> 16) & 0xff);
+            str += static_cast<char>((m_value[i] >> 24) & 0xff);
 	}
 	return str;
     }
     case 'z': {  // Packed 4-state
 	for (int i=0; i<words(); i++) {
-	    str += (char)((m_value[i] >> 0) & 0xff);
-	    str += (char)((m_value[i] >> 8) & 0xff);
-	    str += (char)((m_value[i] >> 16) & 0xff);
-	    str += (char)((m_value[i] >> 24) & 0xff);
-	    str += (char)((m_valueX[i] >> 0) & 0xff);
-	    str += (char)((m_valueX[i] >> 8) & 0xff);
-	    str += (char)((m_valueX[i] >> 16) & 0xff);
-	    str += (char)((m_valueX[i] >> 24) & 0xff);
+            str += static_cast<char>((m_value[i] >> 0) & 0xff);
+            str += static_cast<char>((m_value[i] >> 8) & 0xff);
+            str += static_cast<char>((m_value[i] >> 16) & 0xff);
+            str += static_cast<char>((m_value[i] >> 24) & 0xff);
+            str += static_cast<char>((m_valueX[i] >> 0) & 0xff);
+            str += static_cast<char>((m_valueX[i] >> 8) & 0xff);
+            str += static_cast<char>((m_valueX[i] >> 16) & 0xff);
+            str += static_cast<char>((m_valueX[i] >> 24) & 0xff);
 	}
 	return str;
     }
@@ -598,6 +609,57 @@ string V3Number::displayed(FileLine*fl, const string& vformat) const {
 	fl->v3fatalSrc("Unknown $display-like format code for number: %"<<pos[0]);
 	return "ERR";
     }
+}
+
+string V3Number::toDecimalS() const {
+    if (isNegative()) {
+        V3Number lhsNoSign = *this;
+        lhsNoSign.opNegate(*this);
+        return string("-") + lhsNoSign.toDecimalU();
+    } else {
+        return toDecimalU();
+    }
+}
+
+string V3Number::toDecimalU() const {
+    int maxdecwidth = (width()+3)*4/3;
+
+    // Or (maxdecwidth+7)/8], but can't have more than 4 BCD bits per word
+    V3Number bcd (fileline(), maxdecwidth+4);
+    V3Number tmp (fileline(), maxdecwidth+4);
+    V3Number tmp2 (fileline(), maxdecwidth+4);
+
+    int from_bit = width()-1;
+    // Skip all leading zeros
+    for (; from_bit >= 0 && bitIs0(from_bit); --from_bit);
+    // Double-dabble algorithm
+    for (; from_bit >= 0; --from_bit) {
+        // Any digits >= 5 need an add 3 (via tmp)
+        for (int nibble_bit = 0; nibble_bit < maxdecwidth; nibble_bit+=4) {
+            if (bcd.bitsValue(nibble_bit, 4) >= 5) {
+                tmp2.setAllBits0();
+                tmp2.setBit(nibble_bit, 1);  // Add 3, decompsed as two bits
+                tmp2.setBit(nibble_bit+1, 1);
+                tmp.opAssign(bcd);
+                bcd.opAdd(tmp, tmp2);
+            }
+        }
+        // Shift; bcd = bcd << 1
+        tmp.opAssign(bcd);
+        bcd.opShiftL(tmp, V3Number(fileline(), 32, 1));
+        // bcd[0] = this[from_bit]
+        if (bitIs1(from_bit)) bcd.setBit(0, 1);
+    }
+
+    string output;
+    int lsb = (maxdecwidth-1) & ~3;
+    for (; lsb>0; lsb-=4) { // Skip leading zeros
+        if (bcd.bitsValue(lsb, 4)) break;
+    }
+    for (; lsb>=0; lsb-=4) {
+        output += ('0' + bcd.bitsValue(lsb, 4));  // 0..9
+    }
+    return output;
 }
 
 //======================================================================
@@ -629,11 +691,11 @@ vlsint32_t V3Number::toSInt() const {
 	uint32_t v = toUInt();
 	uint32_t signExtend = (-(v & (1UL<<(width()-1))));
 	uint32_t extended = v | signExtend;
-	return (vlsint32_t)(extended);
+        return static_cast<vlsint32_t>(extended);
     } else {
 	// Where we use this (widths, etc) and care about signedness,
 	// we can reasonably assume the MSB isn't set on unsigned numbers.
-	return (vlsint32_t)toUInt();
+        return static_cast<vlsint32_t>(toUInt());
     }
 }
 
@@ -643,15 +705,16 @@ vluint64_t V3Number::toUQuad() const {
     for (int i=2; i<words(); ++i) {
 	UASSERT(!m_value[i], "Value too wide for 64-bits expected in this context "<<*this);
     }
-    if (width()<=32) return ((vluint64_t)(toUInt()));
-    return ((vluint64_t)m_value[1]<<VL_ULL(32)) | ((vluint64_t)m_value[0]);
+    if (width()<=32) return (static_cast<vluint64_t>(toUInt()));
+    return ((static_cast<vluint64_t>(m_value[1])<<VL_ULL(32))
+            | (static_cast<vluint64_t>(m_value[0])));
 }
 
 vlsint64_t V3Number::toSQuad() const {
     vluint64_t v = toUQuad();
     vluint64_t signExtend = (-(v & (VL_ULL(1)<<(width()-1))));
     vluint64_t extended = v | signExtend;
-    return (vlsint64_t)(extended);
+    return static_cast<vlsint64_t>(extended);
 }
 
 string V3Number::toString() const {
@@ -665,8 +728,8 @@ string V3Number::toString() const {
     for (; bit>=0; bit -= 8) {
 	int v = bitsValue(bit-7, 8);
 	if (!start || v) {
-	    str += (char)((v==0)?' ':v);
-	    start = false;	// Drop leading 0s
+            str += static_cast<char>((v==0) ? ' ' : v);
+            start = false;  // Drop leading 0s
 	}
     }
     return str;
@@ -720,7 +783,7 @@ bool V3Number::isUnknown() const {
     return false;
 }
 bool V3Number::isLt(const V3Number& rhs) const {
-    for (int bit=0; bit<max(this->width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(this->width(),rhs.width()); bit++) {
 	if (this->bitIs1(bit) && rhs.bitIs0(bit)) { return 1; }
 	if (rhs.bitIs1(bit) && this->bitIs0(bit)) { return 0; }
 	if (this->bitIsXZ(bit)) { return 0; }
@@ -730,7 +793,7 @@ bool V3Number::isLt(const V3Number& rhs) const {
 }
 bool V3Number::isLtXZ(const V3Number& rhs) const {
     // Include X/Z in comparisons for sort ordering
-    for (int bit=0; bit<max(this->width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(this->width(),rhs.width()); bit++) {
 	if (this->bitIs1(bit) && rhs.bitIs0(bit)) { return 1; }
 	if (rhs.bitIs1(bit) && this->bitIs0(bit)) { return 0; }
 	if (this->bitIsXZ(bit)) { return 1; }
@@ -762,7 +825,7 @@ uint32_t V3Number::mostSetBitP1() const {
 }
 //======================================================================
 
-V3Number& V3Number::opBitsNonX (const V3Number& lhs) { // 0/1->1, X/Z->0
+V3Number& V3Number::opBitsNonX(const V3Number& lhs) {  // 0/1->1, X/Z->0
     // op i, L(lhs) bit return
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -770,7 +833,7 @@ V3Number& V3Number::opBitsNonX (const V3Number& lhs) { // 0/1->1, X/Z->0
     }
     return *this;
 }
-V3Number& V3Number::opBitsOne (const V3Number& lhs) { // 1->1, 0/X/Z->0
+V3Number& V3Number::opBitsOne(const V3Number& lhs) {  // 1->1, 0/X/Z->0
     // op i, L(lhs) bit return
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -778,7 +841,7 @@ V3Number& V3Number::opBitsOne (const V3Number& lhs) { // 1->1, 0/X/Z->0
     }
     return *this;
 }
-V3Number& V3Number::opBitsXZ (const V3Number& lhs) { // 0/1->1, X/Z->0
+V3Number& V3Number::opBitsXZ(const V3Number& lhs) {  // 0/1->1, X/Z->0
     // op i, L(lhs) bit return
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -786,7 +849,7 @@ V3Number& V3Number::opBitsXZ (const V3Number& lhs) { // 0/1->1, X/Z->0
     }
     return *this;
 }
-V3Number& V3Number::opBitsZ (const V3Number& lhs) { // 0/1->1, X/Z->0
+V3Number& V3Number::opBitsZ(const V3Number& lhs) {  // 0/1->1, X/Z->0
     // op i, L(lhs) bit return
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -794,7 +857,7 @@ V3Number& V3Number::opBitsZ (const V3Number& lhs) { // 0/1->1, X/Z->0
     }
     return *this;
 }
-V3Number& V3Number::opBitsNonZ (const V3Number& lhs) { // 0/1->1, X/Z->0
+V3Number& V3Number::opBitsNonZ(const V3Number& lhs) {  // 0/1->1, X/Z->0
     // op i, L(lhs) bit return
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -806,7 +869,7 @@ V3Number& V3Number::opBitsNonZ (const V3Number& lhs) { // 0/1->1, X/Z->0
 //======================================================================
 // Operators - Simple per-bit logical ops
 
-V3Number& V3Number::opRedOr (const V3Number& lhs) {
+V3Number& V3Number::opRedOr(const V3Number& lhs) {
     // op i, 1 bit return
     char outc = 0;
     for(int bit=0; bit<lhs.width(); bit++) {
@@ -817,7 +880,7 @@ V3Number& V3Number::opRedOr (const V3Number& lhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opRedAnd (const V3Number& lhs) {
+V3Number& V3Number::opRedAnd(const V3Number& lhs) {
     // op i, 1 bit return
     char outc = 1;
     for(int bit=0; bit<lhs.width(); bit++) {
@@ -828,7 +891,7 @@ V3Number& V3Number::opRedAnd (const V3Number& lhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opRedXor (const V3Number& lhs) {
+V3Number& V3Number::opRedXor(const V3Number& lhs) {
     // op i, 1 bit return
     char outc = 0;
     for(int bit=0; bit<lhs.width(); bit++) {
@@ -839,7 +902,7 @@ V3Number& V3Number::opRedXor (const V3Number& lhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opRedXnor (const V3Number& lhs) {
+V3Number& V3Number::opRedXnor(const V3Number& lhs) {
     // op i, 1 bit return
     char outc = 1;
     for(int bit=0; bit<lhs.width(); bit++) {
@@ -850,25 +913,25 @@ V3Number& V3Number::opRedXnor (const V3Number& lhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opCountOnes (const V3Number& lhs) {
+V3Number& V3Number::opCountOnes(const V3Number& lhs) {
     if (lhs.isFourState()) return setAllBitsX();
     setZero();
     m_value[0] = lhs.countOnes();
     opCleanThis();
     return *this;
 }
-V3Number& V3Number::opIsUnknown (const V3Number& lhs) {
+V3Number& V3Number::opIsUnknown(const V3Number& lhs) {
     return setSingleBits(lhs.isUnknown());
 }
-V3Number& V3Number::opOneHot (const V3Number& lhs) {
+V3Number& V3Number::opOneHot(const V3Number& lhs) {
     if (lhs.isFourState()) return setAllBitsX();
     return setSingleBits(lhs.countOnes()==1);
 }
-V3Number& V3Number::opOneHot0 (const V3Number& lhs) {
+V3Number& V3Number::opOneHot0(const V3Number& lhs) {
     if (lhs.isFourState()) return setAllBitsX();
     return setSingleBits(lhs.countOnes()<=1);
 }
-V3Number& V3Number::opCLog2 (const V3Number& lhs) {
+V3Number& V3Number::opCLog2(const V3Number& lhs) {
     if (lhs.isFourState()) return setAllBitsX();
     // IE if 4, this algorithm didn't pre-subtract 1, so we need to post-correct now
     int adjust = (lhs.countOnes()==1) ? 0 : 1;
@@ -882,7 +945,7 @@ V3Number& V3Number::opCLog2 (const V3Number& lhs) {
     return *this;
 }
 
-V3Number& V3Number::opLogNot (const V3Number& lhs) {
+V3Number& V3Number::opLogNot(const V3Number& lhs) {
     // op i, 1 bit return
     char outc = 1;
     for(int bit=0; bit<lhs.width(); bit++) {
@@ -894,7 +957,7 @@ V3Number& V3Number::opLogNot (const V3Number& lhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opNot (const V3Number& lhs) {
+V3Number& V3Number::opNot(const V3Number& lhs) {
     // op i, L(lhs) bit return
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -904,7 +967,7 @@ V3Number& V3Number::opNot (const V3Number& lhs) {
     return *this;
 }
 
-V3Number& V3Number::opAnd (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opAnd(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, careful need to X/Z extend.
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -915,7 +978,7 @@ V3Number& V3Number::opAnd (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opOr (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opOr(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, careful need to X/Z extend.
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -926,13 +989,13 @@ V3Number& V3Number::opOr (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opChangeXor (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opChangeXor(const V3Number& lhs, const V3Number& rhs) {
     // 32 bit result
     opEq(lhs,rhs);
     return *this;
 }
 
-V3Number& V3Number::opXor (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opXor(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, careful need to X/Z extend.
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -944,7 +1007,7 @@ V3Number& V3Number::opXor (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opXnor (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opXnor(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, careful need to X/Z extend.
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -956,7 +1019,7 @@ V3Number& V3Number::opXnor (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opConcat (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opConcat(const V3Number& lhs, const V3Number& rhs) {
     setZero();
     // See also error in V3Width
     if (!lhs.sized() || !rhs.sized()) {
@@ -974,14 +1037,19 @@ V3Number& V3Number::opConcat (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opRepl (const V3Number& lhs, const V3Number& rhs) {	// rhs is # of times to replicate
+V3Number& V3Number::opLenN(const V3Number& lhs) {
+    setQuad(lhs.toString().length());
+    return *this;
+}
+
+V3Number& V3Number::opRepl(const V3Number& lhs, const V3Number& rhs) {  // rhs is # of times to replicate
     // Hopefully the using routine has a error check too.
     // See also error in V3Width
     if (!lhs.sized()) m_fileline->v3warn(WIDTHCONCAT,"Unsized numbers/parameters not allowed in replications.");
     return opRepl(lhs, rhs.toUInt());
 }
 
-V3Number& V3Number::opRepl (const V3Number& lhs, uint32_t rhsval) {	// rhs is # of times to replicate
+V3Number& V3Number::opRepl(const V3Number& lhs, uint32_t rhsval) {  // rhs is # of times to replicate
     // i op repl, L(i)*value(rhs) bit return
     setZero();
     if (rhsval>8192) m_fileline->v3warn(WIDTHCONCAT,"More than a 8k bit replication is probably wrong: "<<rhsval);
@@ -995,16 +1063,16 @@ V3Number& V3Number::opRepl (const V3Number& lhs, uint32_t rhsval) {	// rhs is # 
     return *this;
 }
 
-V3Number& V3Number::opStreamL (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opStreamL(const V3Number& lhs, const V3Number& rhs) {
     setZero();
     // See also error in V3Width
     if (!lhs.sized()) {
 	m_fileline->v3warn(WIDTHCONCAT,"Unsized numbers/parameters not allowed in streams.");
     }
     // Slice size should never exceed the lhs width
-    int ssize=min(rhs.toUInt(), (unsigned)lhs.width());
+    int ssize = std::min(rhs.toUInt(), static_cast<unsigned>(lhs.width()));
     for (int istart=0; istart<lhs.width(); istart+=ssize) {
-	int ostart=max(0, lhs.width()-ssize-istart);
+        int ostart = std::max(0, lhs.width()-ssize-istart);
 	for (int bit=0; bit<ssize && bit<lhs.width()-istart; bit++) {
 	    setBit(ostart+bit, lhs.bitIs(istart+bit));
 	}
@@ -1012,7 +1080,7 @@ V3Number& V3Number::opStreamL (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opLogAnd (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLogAnd(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation
     char loutc = 0;
     char routc = 0;
@@ -1030,7 +1098,7 @@ V3Number& V3Number::opLogAnd (const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opLogOr (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLogOr(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
     char outc = 0;
     for(int bit=0; bit<lhs.width(); bit++) {
@@ -1045,22 +1113,22 @@ last:
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opLogIf (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLogIf(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to
     // X/Z extend. Use opLogNot and opLogOr to do this for us.
     return opLogOr(opLogNot(lhs), rhs);
 }
 
-V3Number& V3Number::opLogIff (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLogIff(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to
     // X/Z extend. Use opLogNot and opLogXor to do this for us.
     return opLogNot(opXor(lhs, rhs));
 }
 
-V3Number& V3Number::opEq (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opEq(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
     char outc = 1;
-    for (int bit=0; bit<max(lhs.width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(lhs.width(),rhs.width()); bit++) {
 	if (lhs.bitIs1(bit) && rhs.bitIs0(bit)) { outc=0; goto last; }
 	if (lhs.bitIs0(bit) && rhs.bitIs1(bit)) { outc=0; goto last; }
 	if (lhs.bitIsXZ(bit)) { outc='x'; }
@@ -1070,10 +1138,10 @@ last:
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opNeq (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opNeq(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
     char outc = 0;
-    for (int bit=0; bit<max(lhs.width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(lhs.width(),rhs.width()); bit++) {
 	if (lhs.bitIs1(bit) && rhs.bitIs0(bit)) { outc=1; goto last; }
 	if (lhs.bitIs0(bit) && rhs.bitIs1(bit)) { outc=1; goto last; }
 	if (lhs.bitIsXZ(bit)) { outc='x'; }
@@ -1083,32 +1151,32 @@ last:
     return setSingleBits(outc);
 }
 
-bool V3Number::isCaseEq (const V3Number& rhs) const {
+bool V3Number::isCaseEq(const V3Number& rhs) const {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
     if (this->width() != rhs.width()) return false;
-    for (int bit=0; bit<max(this->width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(this->width(),rhs.width()); bit++) {
 	if (this->bitIs(bit) != rhs.bitIs(bit)) { return false; }
     }
     return true;
 }
 
-V3Number& V3Number::opCaseEq (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opCaseEq(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.isCaseEq(rhs) ? 1:0);
 }
 
-V3Number& V3Number::opCaseNeq (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opCaseNeq(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
     char outc = 0;
-    for (int bit=0; bit<max(lhs.width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(lhs.width(),rhs.width()); bit++) {
 	if (lhs.bitIs(bit) != rhs.bitIs(bit)) { outc=1; goto last; }
     }
 last:
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opWildEq (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opWildEq(const V3Number& lhs, const V3Number& rhs) {
     char outc = 1;
-    for (int bit=0; bit<max(lhs.width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(lhs.width(),rhs.width()); bit++) {
 	if (!rhs.bitIsXZ(bit)
 	    && lhs.bitIs(bit) != rhs.bitIs(bit)) { outc=0; goto last; }
 	if (lhs.bitIsXZ(bit)) outc='x';
@@ -1117,9 +1185,9 @@ last:
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opWildNeq (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opWildNeq(const V3Number& lhs, const V3Number& rhs) {
     char outc = 0;
-    for (int bit=0; bit<max(lhs.width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(lhs.width(),rhs.width()); bit++) {
 	if (!rhs.bitIsXZ(bit)
 	    && lhs.bitIs(bit) != rhs.bitIs(bit)) { outc=1; goto last; }
 	if (lhs.bitIsXZ(bit)) outc='x';
@@ -1128,10 +1196,10 @@ last:
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opGt (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGt(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
     char outc = 0;
-    for (int bit=0; bit<max(lhs.width(),rhs.width()); bit++) {
+    for (int bit=0; bit < std::max(lhs.width(),rhs.width()); bit++) {
 	if (lhs.bitIs1(bit) && rhs.bitIs0(bit)) { outc=1; }
 	if (rhs.bitIs1(bit) && lhs.bitIs0(bit)) { outc=0; }
 	if (lhs.bitIsXZ(bit)) { outc='x'; }
@@ -1140,18 +1208,18 @@ V3Number& V3Number::opGt (const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opGtS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGtS(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
     char outc = 0;
     {
-	int mbit=max(lhs.width()-1,rhs.width()-1);
+        int mbit = std::max(lhs.width()-1,rhs.width()-1);
 	if (lhs.bitIsXZ(mbit)) { outc='x'; }
 	else if (rhs.bitIsXZ(mbit)) { outc='x'; }
 	else if (lhs.bitIs0(mbit)       && rhs.bitIs1Extend(mbit)) { outc=1; } // + > -
 	else if (lhs.bitIs1Extend(mbit) && rhs.bitIs0(mbit))       { outc=0; } // - !> +
 	else {
 	    // both positive or negative, normal >
-	    for (int bit=0; bit<max(lhs.width()-1,rhs.width()-1); bit++) {
+            for (int bit=0; bit < std::max(lhs.width()-1,rhs.width()-1); bit++) {
 		if (lhs.bitIs1Extend(bit) && rhs.bitIs0(bit)) { outc=1; }
 		if (rhs.bitIs1Extend(bit) && lhs.bitIs0(bit)) { outc=0; }
 		if (lhs.bitIsXZ(bit)) { outc='x'; }
@@ -1162,34 +1230,34 @@ V3Number& V3Number::opGtS (const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(outc);
 }
 
-V3Number& V3Number::opGte (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGte(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
-    V3Number& eq = opEq (lhs,rhs);
+    V3Number& eq = opEq(lhs,rhs);
     if (eq.isNeqZero()) return eq; // Return true
-    return opGt (lhs,rhs);
+    return opGt(lhs,rhs);
 }
 
-V3Number& V3Number::opGteS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGteS(const V3Number& lhs, const V3Number& rhs) {
     // i op j, 1 bit return, max(L(lhs),L(rhs)) calculation, careful need to X/Z extend.
-    V3Number& eq = opEq (lhs,rhs);
+    V3Number& eq = opEq(lhs,rhs);
     if (eq.isNeqZero()) return eq; // Return true
-    return opGtS (lhs,rhs);
+    return opGtS(lhs,rhs);
 }
 
-V3Number& V3Number::opLt (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLt(const V3Number& lhs, const V3Number& rhs) {
     return opGt(rhs,lhs);
 }
-V3Number& V3Number::opLte (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLte(const V3Number& lhs, const V3Number& rhs) {
     return opGte(rhs,lhs);
 }
-V3Number& V3Number::opLtS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLtS(const V3Number& lhs, const V3Number& rhs) {
     return opGtS(rhs,lhs);
 }
-V3Number& V3Number::opLteS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLteS(const V3Number& lhs, const V3Number& rhs) {
     return opGteS(rhs,lhs);
 }
 
-V3Number& V3Number::opRotR (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opRotR(const V3Number& lhs, const V3Number& rhs) {
     // L(lhs) bit return
     if (rhs.isFourState()) return setAllBitsX();
     setZero();
@@ -1200,25 +1268,28 @@ V3Number& V3Number::opRotR (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opRotL (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opRotL(const V3Number& lhs, const V3Number& rhs) {
     // L(lhs) bit return
     if (rhs.isFourState()) return setAllBitsX();
     setZero();
     uint32_t rhsval = rhs.toUInt();
     for (int bit=0; bit<this->width(); bit++) {
-	if (bit >= (int)rhsval) {
+        if (bit >= static_cast<int>(rhsval)) {
 	    setBit(bit,lhs.bitIs((bit - rhsval) % this->width()));
 	}
     }
     return *this;
 }
 
-V3Number& V3Number::opShiftR (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opShiftR(const V3Number& lhs, const V3Number& rhs) {
     // L(lhs) bit return
     if (rhs.isFourState()) return setAllBitsX();
     setZero();
+    for (int bit=32; bit<rhs.width(); bit++) {
+	if (rhs.bitIs1(bit)) return *this;  // shift of over 2^32 must be zero
+    }
     uint32_t rhsval = rhs.toUInt();
-    if (rhsval < (uint32_t)lhs.width()) {
+    if (rhsval < static_cast<uint32_t>(lhs.width())) {
 	for (int bit=0; bit<this->width(); bit++) {
 	    setBit(bit,lhs.bitIs(bit + rhsval));
 	}
@@ -1226,33 +1297,43 @@ V3Number& V3Number::opShiftR (const V3Number& lhs, const V3Number& rhs) {
     return *this;
 }
 
-V3Number& V3Number::opShiftRS (const V3Number& lhs, const V3Number& rhs, uint32_t lbits) {
+V3Number& V3Number::opShiftRS(const V3Number& lhs, const V3Number& rhs, uint32_t lbits) {
     // L(lhs) bit return
     // The spec says a unsigned >>> still acts as a normal >>.
     // We presume it is signed; as that's V3Width's job to convert to opShiftR
     if (rhs.isFourState()) return setAllBitsX();
     setZero();
+    for (int bit=32; bit<rhs.width(); bit++) {
+	for (int bit=0; bit<this->width(); bit++) {
+	    setBit(bit,lhs.bitIs(lbits-1)); // 0/1/X/Z
+	}
+	if (rhs.bitIs1(lbits-1)) setAllBits1(); // -1 else 0
+	return *this;  // shift of over 2^32 must be -1/0
+    }
     uint32_t rhsval = rhs.toUInt();
-    if (rhsval < (uint32_t)lhs.width()) {
+    if (rhsval < static_cast<uint32_t>(lhs.width())) {
 	for (int bit=0; bit<this->width(); bit++) {
 	    setBit(bit,lhs.bitIsExtend(bit + rhsval, lbits));
 	}
     } else {
 	for (int bit=0; bit<this->width(); bit++) {
-	    setBit(bit,lhs.bitIs(lbits-1));
+	    setBit(bit,lhs.bitIs(lbits-1)); // 0/1/X/Z
 	}
     }
     return *this;
 }
 
-V3Number& V3Number::opShiftL (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opShiftL(const V3Number& lhs, const V3Number& rhs) {
     // L(lhs) bit return
     if (rhs.isFourState()) return setAllBitsX();
     setZero();
+    for (int bit=32; bit<rhs.width(); bit++) {
+	if (rhs.bitIs1(bit)) return *this;  // shift of over 2^32 must be zero
+    }
     uint32_t rhsval = rhs.toUInt();
     for (int bit=0; bit<this->width(); bit++) {
-	if (bit >= (int)rhsval) {
-	    setBit(bit,lhs.bitIs(bit - rhsval));
+        if (bit >= static_cast<int>(rhsval)) {
+            setBit(bit, lhs.bitIs(bit - rhsval));
 	}
     }
     return *this;
@@ -1261,7 +1342,7 @@ V3Number& V3Number::opShiftL (const V3Number& lhs, const V3Number& rhs) {
 //======================================================================
 // Ops - Arithmetic
 
-V3Number& V3Number::opAbsS (const V3Number& lhs) {
+V3Number& V3Number::opAbsS(const V3Number& lhs) {
     // op i, L(lhs) bit return
     if (lhs.isFourState()) return setAllBitsX();
     if (lhs.isNegative()) {
@@ -1270,7 +1351,7 @@ V3Number& V3Number::opAbsS (const V3Number& lhs) {
 	return opAssign(lhs);
     }
 }
-V3Number& V3Number::opNegate (const V3Number& lhs) {
+V3Number& V3Number::opNegate(const V3Number& lhs) {
     // op i, L(lhs) bit return
     if (lhs.isFourState()) return setAllBitsX();
     V3Number notlhs (lhs.m_fileline, width());
@@ -1279,7 +1360,7 @@ V3Number& V3Number::opNegate (const V3Number& lhs) {
     opAdd(notlhs,one);
     return *this;
 }
-V3Number& V3Number::opAdd (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opAdd(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, if any 4-state, 4-state return
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
     setZero();
@@ -1294,14 +1375,14 @@ V3Number& V3Number::opAdd (const V3Number& lhs, const V3Number& rhs) {
     }
     return *this;
 }
-V3Number& V3Number::opSub (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opSub(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, if any 4-state, 4-state return
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
     V3Number negrhs (rhs.m_fileline, rhs.width());
     negrhs.opNegate(rhs);
     return opAdd(lhs, negrhs);
 }
-V3Number& V3Number::opMul (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opMul(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, if any 4-state, 4-state return
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
     setZero();
@@ -1311,7 +1392,8 @@ V3Number& V3Number::opMul (const V3Number& lhs, const V3Number& rhs) {
     } else {
 	for (int lword=0; lword<lhs.words(); lword++) {
 	    for (int rword=0; rword<rhs.words(); rword++) {
-		vluint64_t mul = (vluint64_t)(lhs.m_value[lword]) * (vluint64_t)(rhs.m_value[rword]);
+                vluint64_t mul = static_cast<vluint64_t>(lhs.m_value[lword])
+                    * static_cast<vluint64_t>(rhs.m_value[rword]);
 		for (int qword=lword+rword; qword<this->words(); qword++) {
 		    mul += (vluint64_t)(m_value[qword]);
 		    m_value[qword] = (mul & VL_ULL(0xffffffff));
@@ -1323,7 +1405,7 @@ V3Number& V3Number::opMul (const V3Number& lhs, const V3Number& rhs) {
     }
     return *this;
 }
-V3Number& V3Number::opMulS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opMulS(const V3Number& lhs, const V3Number& rhs) {
     // Signed multiply
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
     V3Number lhsNoSign = lhs;  if (lhs.isNegative()) lhsNoSign.opNegate(lhs);
@@ -1337,7 +1419,7 @@ V3Number& V3Number::opMulS (const V3Number& lhs, const V3Number& rhs) {
     }
     return *this;
 }
-V3Number& V3Number::opDiv (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opDiv(const V3Number& lhs, const V3Number& rhs) {
     UINFO(9, "opdiv "<<lhs<<" "<<rhs<<endl);
     // i op j, max(L(lhs),L(rhs)) bit return, if any 4-state, 4-state return
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
@@ -1350,7 +1432,7 @@ V3Number& V3Number::opDiv (const V3Number& lhs, const V3Number& rhs) {
 	return opModDivGuts(lhs,rhs,false);
     }
 }
-V3Number& V3Number::opDivS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opDivS(const V3Number& lhs, const V3Number& rhs) {
     // Signed divide
     //UINFO(9, ">>divs-start "<<lhs<<" "<<rhs<<endl);
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
@@ -1368,7 +1450,7 @@ V3Number& V3Number::opDivS (const V3Number& lhs, const V3Number& rhs) {
     UINFO(9, " <divs-out "<<lhs<<" "<<rhs<<" ="<<*this<<endl);
     return *this;
 }
-V3Number& V3Number::opModDiv (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opModDiv(const V3Number& lhs, const V3Number& rhs) {
     // i op j, max(L(lhs),L(rhs)) bit return, if any 4-state, 4-state return
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
     if (rhs.isEqZero()) return setAllBitsXRemoved();
@@ -1380,7 +1462,7 @@ V3Number& V3Number::opModDiv (const V3Number& lhs, const V3Number& rhs) {
 	return opModDivGuts(lhs,rhs,true);
     }
 }
-V3Number& V3Number::opModDivS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opModDivS(const V3Number& lhs, const V3Number& rhs) {
     // Signed moddiv
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
     if (rhs.isEqZero()) return setAllBitsXRemoved();
@@ -1414,11 +1496,12 @@ V3Number& V3Number::opModDivGuts(const V3Number& lhs, const V3Number& rhs, bool 
     if (vw == 1) {  // Single divisor word breaks rest of algorithm
 	vluint64_t k = 0;
 	for (int j = uw-1; j >= 0; j--) {
-	    vluint64_t unw64 = ((k<<VL_ULL(32)) + (vluint64_t)(lhs.m_value[j]));
-	    m_value[j] = unw64 / (vluint64_t)(rhs.m_value[0]);
-	    k          = unw64 - (vluint64_t)(m_value[j])*(vluint64_t)(rhs.m_value[0]);
+            vluint64_t unw64 = ((k<<VL_ULL(32)) + static_cast<vluint64_t>(lhs.m_value[j]));
+            m_value[j] = unw64 / static_cast<vluint64_t>(rhs.m_value[0]);
+            k          = unw64 - (static_cast<vluint64_t>(m_value[j])
+                                  * static_cast<vluint64_t>(rhs.m_value[0]));
 	}
-	UINFO(9, "  opmoddiv-1w  "<<lhs<<" "<<rhs<<" q="<<*this<<" rem=0x"<<hex<<k<<dec<<endl);
+        UINFO(9, "  opmoddiv-1w  "<<lhs<<" "<<rhs<<" q="<<*this<<" rem=0x"<<std::hex<<k<<std::dec<<endl);
 	if (is_modulus) { setZero(); m_value[0] = k; }
 	opCleanThis();
 	return *this;
@@ -1456,9 +1539,10 @@ V3Number& V3Number::opModDivGuts(const V3Number& lhs, const V3Number& rhs, bool 
     // Main loop
     for (int j = uw - vw; j >= 0; j--) {
 	// Estimate
-	vluint64_t unw64 = ((vluint64_t)(un[j+vw])<<VL_ULL(32) | (vluint64_t)(un[j+vw-1]));
-	vluint64_t qhat = unw64 / (vluint64_t)(vn[vw-1]);
-	vluint64_t rhat = unw64 - qhat*(vluint64_t)(vn[vw-1]);
+        vluint64_t unw64 = (static_cast<vluint64_t>(un[j+vw])<<VL_ULL(32)
+                            | static_cast<vluint64_t>(un[j+vw-1]));
+        vluint64_t qhat = unw64 / static_cast<vluint64_t>(vn[vw-1]);
+        vluint64_t rhat = unw64 - qhat*static_cast<vluint64_t>(vn[vw-1]);
 
       again:
 	if (qhat >= VL_ULL(0x100000000)
@@ -1485,7 +1569,7 @@ V3Number& V3Number::opModDivGuts(const V3Number& lhs, const V3Number& rhs, bool 
 	    this->m_value[j]--;
 	    k = 0;
 	    for (int i=0; i<vw; i++) {
-		t = (vluint64_t)(un[i+j]) + (vluint64_t)(vn[i]) + k;
+                t = static_cast<vluint64_t>(un[i+j]) + static_cast<vluint64_t>(vn[i]) + k;
 		un[i+j] = t;
 		k = t >> VL_ULL(32);
 	    }
@@ -1513,13 +1597,11 @@ V3Number& V3Number::opModDivGuts(const V3Number& lhs, const V3Number& rhs, bool 
     }
 }
 
-V3Number& V3Number::opPow (const V3Number& lhs, const V3Number& rhs, bool lsign, bool rsign) {
+V3Number& V3Number::opPow(const V3Number& lhs, const V3Number& rhs, bool lsign, bool rsign) {
     // L(i) bit return, if any 4-state, 4-state return
     if (lhs.isFourState() || rhs.isFourState()) return setAllBitsX();
     if (rhs.isEqZero()) return setQuad(1); // Overrides lhs 0 -> return 0
     // We may want to special case when the lhs is 2, so we can get larger outputs
-    if (lhs.width()>64) m_fileline->v3fatalSrc("Unsupported: Large >64bit ** power operator not implemented yet: "<<*this);
-    if (rhs.width()>64) m_fileline->v3fatalSrc("Unsupported: Large >64bit ** power operator not implemented yet: "<<*this);
     if (rsign && rhs.isNegative()) {
 	if (lhs.isEqZero()) return setAllBitsXRemoved();
 	else if (lhs.isEqOne()) return setQuad(1);
@@ -1546,17 +1628,17 @@ V3Number& V3Number::opPow (const V3Number& lhs, const V3Number& rhs, bool lsign,
     }
     return *this;
 }
-V3Number& V3Number::opPowSU (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opPowSU(const V3Number& lhs, const V3Number& rhs) {
     return opPow(lhs,rhs,true,false);
 }
-V3Number& V3Number::opPowSS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opPowSS(const V3Number& lhs, const V3Number& rhs) {
     return opPow(lhs,rhs,true,true);
 }
-V3Number& V3Number::opPowUS (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opPowUS(const V3Number& lhs, const V3Number& rhs) {
     return opPow(lhs,rhs,false,true);
 }
 
-V3Number& V3Number::opBufIf1  (const V3Number& ens, const V3Number& if1s) {
+V3Number& V3Number::opBufIf1(const V3Number& ens, const V3Number& if1s) {
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
 	if (ens.bitIs1(bit))  { setBit(bit, if1s.bitIs(bit)); }
@@ -1565,7 +1647,7 @@ V3Number& V3Number::opBufIf1  (const V3Number& ens, const V3Number& if1s) {
     return *this;
 }
 
-V3Number& V3Number::opAssign (const V3Number& lhs) {
+V3Number& V3Number::opAssign(const V3Number& lhs) {
     // Note may be a width change during the assign
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -1574,7 +1656,7 @@ V3Number& V3Number::opAssign (const V3Number& lhs) {
     return *this;
 }
 
-V3Number& V3Number::opExtendS (const V3Number& lhs, uint32_t lbits) {
+V3Number& V3Number::opExtendS(const V3Number& lhs, uint32_t lbits) {
     // Note may be a width change during the sign extension
     setZero();
     for(int bit=0; bit<this->width(); bit++) {
@@ -1583,7 +1665,7 @@ V3Number& V3Number::opExtendS (const V3Number& lhs, uint32_t lbits) {
     return *this;
 }
 
-V3Number& V3Number::opClean (const V3Number& lhs, uint32_t bits) {
+V3Number& V3Number::opClean(const V3Number& lhs, uint32_t bits) {
     return opSel(lhs, bits-1, 0);
 }
 
@@ -1599,32 +1681,32 @@ void V3Number::opCleanThis(bool warnOnTruncation) {
     m_valueX[words()-1] = newValueXMsb;
 }
 
-V3Number& V3Number::opSel (const V3Number& lhs, const V3Number& msb, const V3Number& lsb) {
+V3Number& V3Number::opSel(const V3Number& lhs, const V3Number& msb, const V3Number& lsb) {
     if (lsb.isFourState() || msb.isFourState()) return setAllBitsX();
     return opSel(lhs, msb.toUInt(), lsb.toUInt());
 }
 
-V3Number& V3Number::opSel (const V3Number& lhs, uint32_t msbval, uint32_t lsbval) {
+V3Number& V3Number::opSel(const V3Number& lhs, uint32_t msbval, uint32_t lsbval) {
     setZero();
-    int ibit=lsbval;
+    int ibit = lsbval;
     for(int bit=0; bit<this->width(); bit++) {
 	if (ibit>=0 && ibit<lhs.width()
-	    && ibit<=(int)msbval) {
-	    setBit(bit,lhs.bitIs(ibit));
+            && ibit <= static_cast<int>(msbval)) {
+            setBit(bit, lhs.bitIs(ibit));
 	} else {
-	    setBit(bit,'x');
+            setBit(bit, 'x');
 	}
-	ibit++;
+        ++ibit;
     }
     //UINFO(0,"RANGE "<<lhs<<" "<<msb<<" "<<lsb<<" = "<<*this<<endl);
     return *this;
 }
 
-V3Number& V3Number::opSelInto (const V3Number& lhs, const V3Number& lsb, int width) {
+V3Number& V3Number::opSelInto(const V3Number& lhs, const V3Number& lsb, int width) {
     return opSelInto(lhs, lsb.toSInt(), width);
 }
 
-V3Number& V3Number::opSelInto (const V3Number& lhs, int lsbval, int width) {
+V3Number& V3Number::opSelInto(const V3Number& lhs, int lsbval, int width) {
     // this[lsbval+width-1 : lsbval] = lhs;  Other bits of this are not affected
     int ibit=0;
     for(int bit=lsbval; bit<lsbval+width; bit++) {
@@ -1638,7 +1720,7 @@ V3Number& V3Number::opSelInto (const V3Number& lhs, int lsbval, int width) {
     return *this;
 }
 
-V3Number& V3Number::opCond  (const V3Number& lhs, const V3Number& if1s, const V3Number& if0s) {
+V3Number& V3Number::opCond(const V3Number& lhs, const V3Number& if1s, const V3Number& if0s) {
     V3Number lhstrue (lhs.m_fileline);  lhstrue.opRedOr(lhs);
     if (lhstrue.bitIs0(0)) {
 	this->opAssign(if0s);
@@ -1660,20 +1742,20 @@ V3Number& V3Number::opCond  (const V3Number& lhs, const V3Number& if1s, const V3
 //======================================================================
 // Ops - Floating point
 
-V3Number& V3Number::opIToRD (const V3Number& lhs) {
+V3Number& V3Number::opIToRD(const V3Number& lhs) {
     return setDouble(lhs.toSInt());
 }
-V3Number& V3Number::opRToIS (const V3Number& lhs) {
+V3Number& V3Number::opRToIS(const V3Number& lhs) {
     double v = VL_TRUNC(lhs.toDouble());
-    vlsint32_t i = (vlsint32_t)v; // C converts from double to vlsint32
+    vlsint32_t i = static_cast<vlsint32_t>(v);  // C converts from double to vlsint32
     return setLongS(i);
 }
-V3Number& V3Number::opRToIRoundS (const V3Number& lhs) {
+V3Number& V3Number::opRToIRoundS(const V3Number& lhs) {
     double v = VL_ROUND(lhs.toDouble());
-    vlsint32_t i = (vlsint32_t)v; // C converts from double to vlsint32
+    vlsint32_t i = static_cast<vlsint32_t>(v);  // C converts from double to vlsint32
     return setLongS(i);
 }
-V3Number& V3Number::opRealToBits (const V3Number& lhs) {
+V3Number& V3Number::opRealToBits(const V3Number& lhs) {
     // Conveniently our internal format is identical so we can copy bits...
     if (lhs.width()!=64 || this->width()!=64) {
 	m_fileline->v3fatalSrc("Real operation on wrong sized number");
@@ -1682,7 +1764,7 @@ V3Number& V3Number::opRealToBits (const V3Number& lhs) {
     m_double = false;
     return *this;
 }
-V3Number& V3Number::opBitsToRealD (const V3Number& lhs) {
+V3Number& V3Number::opBitsToRealD(const V3Number& lhs) {
     // Conveniently our internal format is identical so we can copy bits...
     if (lhs.width()!=64 || this->width()!=64) {
 	m_fileline->v3fatalSrc("Real operation on wrong sized number");
@@ -1691,78 +1773,78 @@ V3Number& V3Number::opBitsToRealD (const V3Number& lhs) {
     m_double = true;
     return *this;
 }
-V3Number& V3Number::opNegateD (const V3Number& lhs) {
+V3Number& V3Number::opNegateD(const V3Number& lhs) {
     return setDouble(- lhs.toDouble());
 }
-V3Number& V3Number::opAddD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opAddD(const V3Number& lhs, const V3Number& rhs) {
     return setDouble(lhs.toDouble() + rhs.toDouble());
 }
-V3Number& V3Number::opSubD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opSubD(const V3Number& lhs, const V3Number& rhs) {
     return setDouble(lhs.toDouble() - rhs.toDouble());
 }
-V3Number& V3Number::opMulD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opMulD(const V3Number& lhs, const V3Number& rhs) {
     return setDouble(lhs.toDouble() * rhs.toDouble());
 }
-V3Number& V3Number::opDivD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opDivD(const V3Number& lhs, const V3Number& rhs) {
     // On exceptions, we just generate 'inf' through floating point
     // IEEE says it's implementation defined what happens
     return setDouble(lhs.toDouble() / rhs.toDouble());
 }
-V3Number& V3Number::opPowD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opPowD(const V3Number& lhs, const V3Number& rhs) {
     // On exceptions, we just generate 'inf' through floating point
     // IEEE says it's implementation defined what happens
     return setDouble(pow(lhs.toDouble(), rhs.toDouble()));
 }
-V3Number& V3Number::opEqD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opEqD(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toDouble() == rhs.toDouble());
 }
-V3Number& V3Number::opNeqD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opNeqD(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toDouble() != rhs.toDouble());
 }
-V3Number& V3Number::opGtD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGtD(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toDouble() > rhs.toDouble());
 }
-V3Number& V3Number::opGteD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGteD(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toDouble() >= rhs.toDouble());
 }
-V3Number& V3Number::opLtD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLtD(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toDouble() < rhs.toDouble());
 }
-V3Number& V3Number::opLteD (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLteD(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toDouble() <= rhs.toDouble());
 }
 
 //======================================================================
 // Ops - String
 
-V3Number& V3Number::opConcatN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opConcatN(const V3Number& lhs, const V3Number& rhs) {
     return setString(lhs.toString() + rhs.toString());
 }
-V3Number& V3Number::opReplN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opReplN(const V3Number& lhs, const V3Number& rhs) {
     return opReplN(lhs, rhs.toUInt());
 }
-V3Number& V3Number::opReplN (const V3Number& lhs, uint32_t rhsval) {
+V3Number& V3Number::opReplN(const V3Number& lhs, uint32_t rhsval) {
     string out; out.reserve(lhs.toString().length() * rhsval);
     for (unsigned times=0; times<rhsval; times++) {
 	out += lhs.toString();
     }
     return setString(out);
 }
-V3Number& V3Number::opEqN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opEqN(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toString() == rhs.toString());
 }
-V3Number& V3Number::opNeqN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opNeqN(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toString() != rhs.toString());
 }
-V3Number& V3Number::opGtN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGtN(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toString() > rhs.toString());
 }
-V3Number& V3Number::opGteN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opGteN(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toString() >= rhs.toString());
 }
-V3Number& V3Number::opLtN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLtN(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toString() < rhs.toString());
 }
-V3Number& V3Number::opLteN (const V3Number& lhs, const V3Number& rhs) {
+V3Number& V3Number::opLteN(const V3Number& lhs, const V3Number& rhs) {
     return setSingleBits(lhs.toString() <= rhs.toString());
 }

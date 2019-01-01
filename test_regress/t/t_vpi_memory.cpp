@@ -46,6 +46,9 @@ using namespace std;
 
 unsigned int main_time = false;
 
+#define STRINGIFY(x) STRINGIFY2(x)
+#define STRINGIFY2(x) #x
+
 //======================================================================
 
 #define CHECK_RESULT_VH(got, exp) \
@@ -63,14 +66,14 @@ unsigned int main_time = false;
 
 // Use cout to avoid issues with %d/%lx etc
 #define CHECK_RESULT(got, exp) \
-    if ((got != exp)) { \
+    if ((got) != (exp)) { \
 	cout<<dec<<"%Error: "<<FILENM<<":"<<__LINE__ \
 	   <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<endl;	\
 	return __LINE__; \
     }
 
 #define CHECK_RESULT_HEX(got, exp) \
-    if ((got != exp)) { \
+    if ((got) != (exp)) { \
 	cout<<dec<<"%Error: "<<FILENM<<":"<<__LINE__<<hex \
 	   <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<endl;	\
 	return __LINE__; \
@@ -89,7 +92,7 @@ unsigned int main_time = false;
 int _mon_check_range(TestVpiHandle& handle, int size, int left, int right) {
     TestVpiHandle iter_h, left_h, right_h;
     s_vpi_value value = {
-      vpiIntVal
+	vpiIntVal, .value = {.integer = 0}
     };
     // check size of object
     int vpisize = vpi_get(vpiSize, handle);
@@ -120,7 +123,7 @@ int _mon_check_memory() {
     TestVpiHandle mem_h, lcl_h;
     vpiHandle iter_h; // icarus does not like auto free of iterator handles
     s_vpi_value value = {
-      vpiIntVal
+	vpiIntVal, .value = {.integer = 0}
     };
     vpi_printf((PLI_BYTE8*)"Check memory vpi ...\n");
     mem_h = vpi_handle_by_name((PLI_BYTE8*)TestSimulator::rooted("mem0"), NULL);
@@ -210,7 +213,7 @@ void (*vlog_startup_routines[])() = {
 
 #else
 
-double sc_time_stamp () {
+double sc_time_stamp() {
     return main_time;
 }
 int main(int argc, char **argv, char **env) {
@@ -219,7 +222,7 @@ int main(int argc, char **argv, char **env) {
     Verilated::debug(0);
     Verilated::fatalOnVpiError(0); // we're going to be checking for these errors do don't crash out
 
-    VM_PREFIX* topp = new VM_PREFIX ("");  // Note null name - we're flattening it out
+    VM_PREFIX* topp = new VM_PREFIX("");  // Note null name - we're flattening it out
 
 #ifdef VERILATOR
 # ifdef TEST_VERBOSE
@@ -231,8 +234,8 @@ int main(int argc, char **argv, char **env) {
     Verilated::traceEverOn(true);
     VL_PRINTF("Enabling waves...\n");
     VerilatedVcdC* tfp = new VerilatedVcdC;
-    topp->trace (tfp, 99);
-    tfp->open ("obj_dir/t_vpi_var/simx.vcd");
+    topp->trace(tfp, 99);
+    tfp->open(STRINGIFY(TEST_OBJ_DIR) "/simx.vcd");
 #endif
 
     topp->eval();

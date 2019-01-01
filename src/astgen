@@ -19,11 +19,11 @@ my @Opt_Cpt;
 my @Opt_I;
 Getopt::Long::config ("pass_through", "no_auto_abbrev");
 if (! GetOptions (
-	  "help"	=> \&usage,
-	  "debug"	=> sub { $Debug = 1; },
-	  "classes!"	=> \$opt_classes,
-	  "report!"	=> \$opt_report,
-	  "<>"		=> \&parameter,
+          "help"        => \&usage,
+          "debug"       => sub { $Debug = 1; },
+          "classes!"    => \$opt_classes,
+          "report!"     => \$opt_report,
+          "<>"          => \&parameter,
     )) {
     usage();
 }
@@ -211,6 +211,7 @@ sub write_report {
 
 sub write_classes {
     my $fh = open_file(@_);
+    printf $fh "class AstNode;\n";
     foreach my $type (sort (keys %Classes)) {
 	printf $fh "class %-20s // ", "Ast${type};";
 	foreach my $subclass (subclasses_of($type)) {
@@ -236,27 +237,45 @@ sub write_visitor {
 
 sub write_intf {
     my $fh = open_file(@_);
+
+    print $fh "\n";
+    print $fh "    // These for use by VN_IS macro only\n";
     foreach my $type (sort (keys %Classes)) {
-	next if $type eq "Node";	# Special, just a return (this);
-	printf $fh "    Ast%-16s cast${type}();\n"
-	    ,$type."*";
+        print $fh "    static bool privateIs",$type,"(const AstNode* nodep);\n";
     }
+
+    print $fh "\n";
+    print $fh "    // These for use by VN_CAST macro only\n";
+    foreach my $type (sort (keys %Classes)) {
+        print $fh "    static Ast",$type,"* privateCast",$type,"(AstNode* nodep);\n";
+    }
+    foreach my $type (sort (keys %Classes)) {
+        print $fh "    static const Ast",$type,"* privateConstCast",$type,"(const AstNode* nodep);\n";
+    }
+
     $fh->close();
 }
 
 sub write_impl {
     my $fh = open_file(@_);
+
+    print $fh "\n";
+    print $fh "    // These for use by VN_IS macro only\n";
     foreach my $type (sort (keys %Classes)) {
-	next if $type eq "Node";	# Special, just a return (this);
-	# For performance, prefer static_cast where we can
 	if (children_of($type)) {
-	    printf $fh "inline Ast%-16s AstNode::cast${type}() { return (dynamic_cast<Ast${type}*>(this)); }\n"
-		,$type."*";
+            print $fh "inline bool AstNode::privateIs",$type,"(const AstNode* nodep) { return (bool)(dynamic_cast<const Ast",$type,"*>(nodep)); }\n";
 	} else {
-	    printf $fh "inline Ast%-16s AstNode::cast${type}() { return (this && this->type() == AstType::at${type}) ? static_cast<Ast${type}*>(this) : NULL; }\n"
-		,$type."*";
+            print $fh "inline bool AstNode::privateIs",$type,"(const AstNode* nodep) { return nodep && nodep->type() == AstType::at",$type,"; }\n";
 	}
     }
+
+    foreach my $type (sort (keys %Classes)) {
+        print $fh "inline Ast",$type,"* AstNode::privateCast",$type,"(AstNode* nodep) { return dynamic_cast<Ast",$type,"*>(nodep); }\n";
+    }
+    foreach my $type (sort (keys %Classes)) {
+        print $fh "inline const Ast",$type,"* AstNode::privateConstCast",$type,"(const AstNode* nodep) { return dynamic_cast<const Ast",$type,"*>(nodep); }\n";
+    }
+
     $fh->close();
 }
 
@@ -272,14 +291,14 @@ sub write_types {
     printf $fh "\t_ENUM_END\n";
     printf $fh "    };\n";
     printf $fh "    const char* ascii() const {\n";
-    printf $fh "	const char* names[] = {\n";
+    printf $fh "        const char* const names[] = {\n";
     foreach my $type (sort (keys %Classes)) {
 	next if $type =~ /^Node/;
 	print $fh "\t\"", uc $type, "\",\n";
     }
     printf $fh "\t\"_ENUM_END\"\n";
-    printf $fh "	};\n";
-    printf $fh "	return names[m_e];\n";
+    printf $fh "        };\n";
+    printf $fh "        return names[m_e];\n";
     printf $fh "    };\n";
     $fh->close();
 }
@@ -404,12 +423,14 @@ sub tree_line {
 	    next if $subnode =~ /^\$([a-z0-9]+)$/gi;   # "$lhs" is just a comment that this op has a lhs
 	    $mif .= " && " if $mif;
 	    my $subnodeif = $subnode;
+            $subnodeif =~ s/\$([a-zA-Z0-9]+)\.cast([A-Z][A-Za-z0-9]+)$/VN_IS(nodep->$1(),$2)/g;
 	    $subnodeif =~ s/\$([a-zA-Z0-9]+)\.([a-zA-Z0-9]+)$/nodep->$1()->$2()/g;
 	    $subnodeif = add_nodep($subnodeif);
 	    $mif .= $subnodeif;
 	}
 
 	my $exec_func = treeop_exec_func($self, $to);
+        while ($exec_func =~ s/([-()a-zA-Z0-9_>]+)->cast([A-Z][A-Za-z0-9]+)\(\)/VN_CAST($1,$2)/) {}
 
 	$self->{treeop}{$type} ||= [];
 	my $n = $#{$self->{treeop}{$type}} + 1;
@@ -450,7 +471,7 @@ sub _exec_syms_recurse {
 	if (ref $sym) { _exec_syms_recurse($sym); }
 	elsif ($sym =~ /^\$.*/) {
 	    if (!defined $_Exec_Syms{$sym}) {
-		$_Exec_Syms{$sym} = "arg".($_Exec_Nsyms++)."p";
+		$_Exec_Syms{$sym} = "arg".(++$_Exec_Nsyms)."p";
 	    }
 	}
     }
@@ -554,7 +575,8 @@ sub tree_match {
 	    $self->print("    bool $typefunc->{match_func}(Ast${base}* nodep) {\n",
 			 "\t// $typefunc->{comment}\n",);
 	    $self->print(	"\tif ($typefunc->{match_if}) {\n");
-	    $self->print(	"\t    UINFO($typefunc->{uinfo_level},(void*)(nodep)<<\" $typefunc->{uinfo}\\n\");\n");
+            $self->print(       "\t    UINFO($typefunc->{uinfo_level},cvtToHex(nodep)"
+                                ."<<\" $typefunc->{uinfo}\\n\");\n");
 	    $self->print(	"\t    $typefunc->{exec_func}\n");
 	    $self->print(	"\t    return true;\n");
 	    $self->print(	"\t}\n");
@@ -574,7 +596,7 @@ sub tree_base {
 	my @out_for_type;
 	foreach my $base (::subclasses_of($type), $type) {
 	    foreach my $typefunc (@{$self->{treeop}{$base}}) {
-		my @lines = ("	if ($typefunc->{match_func}(nodep)) return;\n",);
+                my @lines = ("        if ($typefunc->{match_func}(nodep)) return;\n",);
 		if ($typefunc->{short_circuit}) {	# short-circuit match fn
 		    push @out_for_type_sc, @lines;
 		} else {				# Standard match fn
@@ -597,11 +619,11 @@ sub tree_base {
 	if ($out_for_type_sc[0]) {	# Short-circuited types
 	    $self->print("    // Generated by astgen with short-circuiting\n",
 			 "    virtual void visit(Ast${type}* nodep) {\n",
-			 "	nodep->lhsp()->iterateAndNext(*this);\n",
+                         "      iterateAndNextNull(nodep->lhsp());\n",
 			 @out_for_type_sc);
-	    $self->print("	nodep->rhsp()->iterateAndNext(*this);\n",
-			 "	AstNodeTriop *tnp = nodep->castNodeTriop();\n",
-			 "	if (tnp && tnp->thsp()) tnp->thsp()->iterateAndNext(*this);\n",
+            $self->print("      iterateAndNextNull(nodep->rhsp());\n",
+                         "      AstNodeTriop *tnp = VN_CAST(nodep, NodeTriop);\n",
+                         "      if (tnp && tnp->thsp()) iterateAndNextNull(tnp->thsp());\n",
 			 @out_for_type,
 			 "    }\n") if ($out_for_type[0]);
 	} elsif ($out_for_type[0]) {	# Other types with something to print
@@ -610,7 +632,7 @@ sub tree_base {
 	    $self->print("    // Generated by astgen\n",
 			 "    virtual void visit$gen(Ast${type}* nodep) {\n",
 			 ($skip?"":
-			  "	nodep->iterateChildren(*this);\n"),
+                          "        iterateChildren(nodep);\n"),
 			 @out_for_type,
 			 "    }\n");
 	}
@@ -655,7 +677,7 @@ Makes a report report.
 
 =head1 DISTRIBUTION
 
-Copyright 2002-2017 by Wilson Snyder.  Verilator is free software; you can
+Copyright 2002-2018 by Wilson Snyder.  Verilator is free software; you can
 redistribute it and/or modify it under the terms of either the GNU Lesser
 General Public License Version 3 or the Perl Artistic License Version 2.0.
 

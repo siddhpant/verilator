@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2004-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -28,11 +28,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <vector>
 
 #include "V3Global.h"
 #include "V3Subst.h"
@@ -40,16 +35,16 @@
 #include "V3Stats.h"
 #include "V3Ast.h"
 
+#include <algorithm>
+#include <cstdarg>
+#include <vector>
+
 //######################################################################
 // Common debugging baseclass
 
 class SubstBaseVisitor : public AstNVisitor {
 public:
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //######################################################################
@@ -81,14 +76,13 @@ class SubstVarEntry {
     bool		m_wordAssign;	// True if any word assignments
     bool		m_wordUse;	// True if any individual word usage
     SubstVarWord	m_whole;	// Data for whole vector used at once
-    vector<SubstVarWord> m_words;	// Data for every word, if multi word variable
+    std::vector<SubstVarWord> m_words;  // Data for every word, if multi word variable
     int debug() { return SubstBaseVisitor::debug(); }
 
 public:
     // CONSTRUCTORS
-    explicit SubstVarEntry (AstVar* varp) {	// Construction for when a var is used
+    explicit SubstVarEntry(AstVar* varp) {  // Construction for when a var is used
 	m_varp = varp;
-	m_whole.m_use = false;
 	m_wordAssign = false;
 	m_wordUse = false;
 	m_words.resize(varp->widthWords());
@@ -108,12 +102,12 @@ private:
 	else return m_words[word].m_assignp;
     }
 public:
-    void assignWhole (int step, AstNodeAssign* assp) {
+    void assignWhole(int step, AstNodeAssign* assp) {
 	if (m_whole.m_assignp) m_whole.m_complex = true;
 	m_whole.m_assignp = assp;
 	m_whole.m_step = step;
     }
-    void assignWord (int step, int word, AstNodeAssign* assp) {
+    void assignWord(int step, int word, AstNodeAssign* assp) {
 	if (!wordNumOk(word) || getWordAssignp(word) || m_words[word].m_complex) m_whole.m_complex = true;
 	m_wordAssign = true;
 	if (wordNumOk(word)) {
@@ -121,11 +115,11 @@ public:
 	    m_words[word].m_step = step;
 	}
     }
-    void assignWordComplex (int step, int word) {
+    void assignWordComplex(int word) {
 	if (!wordNumOk(word) || getWordAssignp(word) || m_words[word].m_complex) m_whole.m_complex = true;
 	m_words[word].m_complex = true;
     }
-    void assignComplex(int step) {
+    void assignComplex() {
 	m_whole.m_complex = true;
     }
     void consumeWhole() {  //==consumeComplex as we don't know the difference
@@ -161,18 +155,18 @@ public:
     int getWordStep(int word) const {
 	if (!wordNumOk(word)) return 0; else return m_words[word].m_step;
     }
-    void deleteAssign (AstNodeAssign* nodep) {
+    void deleteAssign(AstNodeAssign* nodep) {
 	UINFO(5, "Delete "<<nodep<<endl);
 	nodep->unlinkFrBack()->deleteTree(); VL_DANGLING(nodep);
     }
     void deleteUnusedAssign() {
 	// If there are unused assignments in this var, kill them
 	if (!m_whole.m_use && !m_wordUse && m_whole.m_assignp) {
-	    deleteAssign (m_whole.m_assignp); m_whole.m_assignp=NULL;
+            deleteAssign(m_whole.m_assignp); m_whole.m_assignp=NULL;
 	}
 	for (unsigned i=0; i<m_words.size(); i++) {
 	    if (!m_whole.m_use && !m_words[i].m_use && m_words[i].m_assignp && !m_words[i].m_complex) {
-		deleteAssign (m_words[i].m_assignp); m_words[i].m_assignp=NULL;
+                deleteAssign(m_words[i].m_assignp); m_words[i].m_assignp=NULL;
 	    }
 	}
     }
@@ -192,11 +186,11 @@ private:
 
     // METHODS
     SubstVarEntry* findEntryp(AstVarRef* nodep) {
-	return (SubstVarEntry*)(nodep->varp()->user1p());  // Might be NULL
+        return reinterpret_cast<SubstVarEntry*>(nodep->varp()->user1p());  // Might be NULL
     }
     // VISITORS
     virtual void visit(AstVarRef* nodep) {
-	SubstVarEntry* entryp = findEntryp (nodep);
+        SubstVarEntry* entryp = findEntryp(nodep);
 	if (entryp) {
 	    // Don't sweat it.  We assign a new temp variable for every new assignment,
 	    // so there's no way we'd ever replace a old value.
@@ -210,7 +204,7 @@ private:
     }
     virtual void visit(AstConst* nodep) {}	// Accelerate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
@@ -218,7 +212,7 @@ public:
 	UINFO(9, "        SubstUseVisitor "<<origStep<<" "<<nodep<<endl);
 	m_ok = true;
 	m_origStep = origStep;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~SubstUseVisitor() {}
     // METHODS
@@ -238,7 +232,7 @@ private:
     AstUser2InUse	m_inuser2;
 
     // STATE
-    vector<SubstVarEntry*>	m_entryps;	// Nodes to delete when we are finished
+    std::vector<SubstVarEntry*> m_entryps;      // Nodes to delete when we are finished
     int				m_ops;		// Number of operators on assign rhs
     int				m_assignStep;	// Assignment number to determine var lifetime
     V3Double0			m_statSubsts;	// Statistic tracking
@@ -249,12 +243,12 @@ private:
     // METHODS
     SubstVarEntry* getEntryp(AstVarRef* nodep) {
 	if (!nodep->varp()->user1p()) {
-	    SubstVarEntry* entryp = new SubstVarEntry (nodep->varp());
+            SubstVarEntry* entryp = new SubstVarEntry(nodep->varp());
 	    m_entryps.push_back(entryp);
 	    nodep->varp()->user1p(entryp);
 	    return entryp;
 	} else {
-	    SubstVarEntry* entryp = (SubstVarEntry*)(nodep->varp()->user1p());
+            SubstVarEntry* entryp = reinterpret_cast<SubstVarEntry*>(nodep->varp()->user1p());
 	    return entryp;
 	}
     }
@@ -266,31 +260,31 @@ private:
     virtual void visit(AstNodeAssign* nodep) {
 	m_ops = 0;
 	m_assignStep++;
-	nodep->rhsp()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->rhsp());
 	bool hit=false;
-	if (AstVarRef* varrefp = nodep->lhsp()->castVarRef()) {
+        if (AstVarRef* varrefp = VN_CAST(nodep->lhsp(), VarRef)) {
 	    if (isSubstVar(varrefp->varp())) {
 		SubstVarEntry* entryp = getEntryp(varrefp);
 		hit = true;
 		if (m_ops > SUBST_MAX_OPS_SUBST) {
 		    UINFO(8," ASSIGNtooDeep "<<varrefp<<endl);
-		    entryp->assignComplex(m_assignStep);
+                    entryp->assignComplex();
 		} else {
 		    UINFO(8," ASSIGNwhole "<<varrefp<<endl);
 		    entryp->assignWhole(m_assignStep, nodep);
 		}
 	    }
 	}
-	else if (AstWordSel* wordp = nodep->lhsp()->castWordSel()) {
-	    if (AstVarRef* varrefp = wordp->lhsp()->castVarRef()) {
-		if (wordp->rhsp()->castConst()
+        else if (AstWordSel* wordp = VN_CAST(nodep->lhsp(), WordSel)) {
+            if (AstVarRef* varrefp = VN_CAST(wordp->lhsp(), VarRef)) {
+                if (VN_IS(wordp->rhsp(), Const)
 		    && isSubstVar(varrefp->varp())) {
-		    int word = wordp->rhsp()->castConst()->toUInt();
+                    int word = VN_CAST(wordp->rhsp(), Const)->toUInt();
 		    SubstVarEntry* entryp = getEntryp(varrefp);
 		    hit = true;
 		    if (m_ops > SUBST_MAX_OPS_SUBST) {
 			UINFO(8," ASSIGNtooDeep "<<varrefp<<endl);
-			entryp->assignWordComplex(m_assignStep, word);
+                        entryp->assignWordComplex(word);
 		    } else {
 			UINFO(8," ASSIGNword"<<word<<" "<<varrefp<<endl);
 			entryp->assignWord(m_assignStep, word, nodep);
@@ -299,14 +293,14 @@ private:
 	    }
 	}
 	if (!hit) {
-	    nodep->lhsp()->accept(*this);
+            iterate(nodep->lhsp());
 	}
     }
     void replaceSubstEtc(AstNode* nodep, AstNode* substp) {
 	if (debug()>5) nodep->dumpTree(cout,"  substw_old: ");
 	AstNode* newp = substp->cloneTree(true);
 	if (!nodep->isQuad() && newp->isQuad()) {
-	    newp = new AstCCast (newp->fileline(), newp, nodep);
+            newp = new AstCCast(newp->fileline(), newp, nodep);
 	}
 	if (debug()>5)  newp->dumpTree(cout,"       w_new: ");
 	nodep->replaceWith(newp);
@@ -314,9 +308,9 @@ private:
 	++m_statSubsts;
     }
     virtual void visit(AstWordSel* nodep) {
-	nodep->rhsp()->accept(*this);
-	AstVarRef* varrefp = nodep->lhsp()->castVarRef();
-	AstConst* constp = nodep->rhsp()->castConst();
+        iterate(nodep->rhsp());
+        AstVarRef* varrefp = VN_CAST(nodep->lhsp(), VarRef);
+        AstConst* constp = VN_CAST(nodep->rhsp(), Const);
 	if (varrefp && isSubstVar(varrefp->varp())
 	    && !varrefp->lvalue()
 	    && constp) {
@@ -337,7 +331,7 @@ private:
 		entryp->consumeWord(word);
 	    }
 	} else {
-	    nodep->lhsp()->accept(*this);
+            iterate(nodep->lhsp());
 	}
     }
     virtual void visit(AstVarRef* nodep) {
@@ -348,10 +342,10 @@ private:
 	    UINFO(9, " ASSIGNstep u2="<<nodep->varp()->user2()<<" "<<nodep<<endl);
 	}
 	if (isSubstVar(nodep->varp())) {
-	    SubstVarEntry* entryp = getEntryp (nodep);
+            SubstVarEntry* entryp = getEntryp(nodep);
 	    if (nodep->lvalue()) {
 		UINFO(8," ASSIGNcpx "<<nodep<<endl);
-		entryp->assignComplex(m_assignStep);
+                entryp->assignComplex();
 	    } else if (AstNode* substp = entryp->substWhole(nodep)) {
 		// Check that the RHS hasn't changed value since we recorded it.
 		SubstUseVisitor visitor (substp, entryp->getWholeStep());
@@ -375,7 +369,7 @@ private:
 	if (!nodep->isSubstOptimizable()) {
 	    m_ops = SUBST_MAX_OPS_NA;
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
@@ -384,11 +378,11 @@ public:
 	AstNode::user2ClearTree();	// user2p() used on entire tree
 	m_ops = 0;
 	m_assignStep = 0;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~SubstVisitor() {
 	V3Stats::addStat("Optimizations, Substituted temps", m_statSubsts);
-	for (vector<SubstVarEntry*>::iterator it = m_entryps.begin(); it != m_entryps.end(); ++it) {
+        for (std::vector<SubstVarEntry*>::iterator it = m_entryps.begin(); it != m_entryps.end(); ++it) {
 	    (*it)->deleteUnusedAssign();
 	    delete (*it);
 	}
@@ -400,6 +394,8 @@ public:
 
 void V3Subst::substituteAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    SubstVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("subst.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        SubstVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("subst", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

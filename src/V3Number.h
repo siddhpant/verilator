@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,12 +20,14 @@
 
 #ifndef _V3NUMBER_H_
 #define _V3NUMBER_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
-#include <vector>
 
 #include "V3Error.h"
 #include "V3FileLine.h"
+
+#include <vector>
 
 //============================================================================
 
@@ -39,8 +41,8 @@ class V3Number {
     bool	m_fromString:1;	// True if from string literal
     bool	m_autoExtend:1;	// True if SystemVerilog extend-to-any-width
     FileLine*	m_fileline;
-    vector<uint32_t>	m_value;	// The Value, with bit 0 being in bit 0 of this vector (unless X/Z)
-    vector<uint32_t>	m_valueX;	// Each bit is true if it's X or Z, 10=z, 11=x
+    std::vector<uint32_t> m_value;  // The Value, with bit 0 being in bit 0 of this vector (unless X/Z)
+    std::vector<uint32_t> m_valueX;  // Each bit is true if it's X or Z, 10=z, 11=x
     string		m_stringVal;	// If isString, the value of the string
     // METHODS
     V3Number& setSingleBits(char value);
@@ -54,7 +56,7 @@ public:
     V3Number& setLong(uint32_t value);
     V3Number& setLongS(vlsint32_t value);
     V3Number& setDouble(double value);
-    void setBit (int bit, char value) {		// Note must be pre-zeroed!
+    void setBit(int bit, char value) {  // Note must be pre-zeroed!
 	if (bit>=m_width) return;
 	uint32_t mask = (1UL<<(bit&31));
 	if (value=='0' || value==0) {
@@ -72,14 +74,14 @@ public:
 	}
     }
 private:
-    char bitIs	(int bit) const {
+    char bitIs(int bit) const {
 	if (bit>=m_width || bit<0) {
 	    // We never sign extend
 	    return '0';
 	}
 	return ( "01zx"[(((m_value[bit/32] & (1UL<<(bit&31)))?1:0)
 			 | ((m_valueX[bit/32] & (1UL<<(bit&31)))?2:0))] ); }
-    char bitIsExtend (int bit, int lbits) const {
+    char bitIsExtend(int bit, int lbits) const {
 	// lbits usually = width, but for C optimizations width=32_bits, lbits = 32_or_less
 	if (bit<0) return '0';
 	UASSERT(lbits<=m_width, "Extend of wrong size");
@@ -91,19 +93,19 @@ private:
 	}
 	return ( "01zx"[(((m_value[bit/32] & (1UL<<(bit&31)))?1:0)
 			 | ((m_valueX[bit/32] & (1UL<<(bit&31)))?2:0))] ); }
-    bool bitIs0	(int bit) const {
+    bool bitIs0(int bit) const {
 	if (bit<0) return false;
 	if (bit>=m_width) return !bitIsXZ(m_width-1);
 	return ( (m_value[bit/32] & (1UL<<(bit&31)))==0 && !(m_valueX[bit/32] & (1UL<<(bit&31))) ); }
-    bool bitIs1	(int bit) const {
+    bool bitIs1(int bit) const {
 	if (bit<0) return false;
 	if (bit>=m_width) return false;
 	return ( (m_value[bit/32] & (1UL<<(bit&31))) && !(m_valueX[bit/32] & (1UL<<(bit&31))) ); }
-    bool bitIs1Extend (int bit) const {
+    bool bitIs1Extend(int bit) const {
 	if (bit<0) return false;
 	if (bit>=m_width) return bitIs1Extend(m_width-1);
 	return ( (m_value[bit/32] & (1UL<<(bit&31))) && !(m_valueX[bit/32] & (1UL<<(bit&31))) ); }
-    bool bitIsX (int bit) const {
+    bool bitIsX(int bit) const {
 	if (bit<0) return false;
 	if (bit>=m_width) return bitIsZ(m_width-1);
 	return ( (m_value[bit/32] & (1UL<<(bit&31))) && (m_valueX[bit/32] & (1UL<<(bit&31))) ); }
@@ -112,7 +114,7 @@ private:
 	if (bit>=m_width) return bitIsXZ(m_width-1);
 	return ( (m_valueX[bit/32] & (1UL<<(bit&31))));
     }
-    bool bitIsZ (int bit) const {
+    bool bitIsZ(int bit) const {
 	if (bit<0) return false;
 	if (bit>=m_width) return bitIsZ(m_width-1);
 	return ( (~m_value[bit/32] & (1UL<<(bit&31))) && (m_valueX[bit/32] & (1UL<<(bit&31))) ); }
@@ -132,9 +134,9 @@ public:
     explicit V3Number(FileLine* fileline) { init(fileline, 1); }
     V3Number(FileLine* fileline, int width) { init(fileline, width); }  // 0=unsized
     V3Number(FileLine* fileline, int width, uint32_t value) { init(fileline, width); m_value[0]=value; opCleanThis(); }
-    V3Number(FileLine* fileline, const char* source);	// Create from a verilog 32'hxxxx number.
-    class VerilogStringLiteral {};	// for creator type-overload selection
-    V3Number(VerilogStringLiteral, FileLine* fileline, const string& vvalue);
+    V3Number(FileLine* fileline, const char* sourcep);  // Create from a verilog 32'hxxxx number.
+    class VerilogStringLiteral {};  // For creator type-overload selection
+    V3Number(VerilogStringLiteral, FileLine* fileline, const string& str);
     class String {};
     V3Number(String, FileLine* fileline, const string& value) { init(fileline, 0); setString(value); }
 
@@ -171,7 +173,7 @@ public:
     // ACCESSORS
     string ascii(bool prefixed=true, bool cleanVerilog=false) const;
     static string quoteNameControls(const string& namein); // Add backslash quotes to strings
-    string displayed(FileLine* fl, const string& format) const;
+    string displayed(FileLine* fl, const string& vformat) const;
     static bool displayedFmtLegal(char format);  // Is this a valid format letter?
     int width() const { return m_width; }
     int widthMin() const;	// Minimum width that can represent this number (~== log2(num)+1)
@@ -192,9 +194,9 @@ public:
     bool isBitsZero(int msb, int lsb) const;
     bool isEqOne() const;
     bool isEqAllOnes(int optwidth=0) const;
-    bool isCaseEq(const V3Number& rhsp) const;  // operator==
-    bool isLt(const V3Number& rhsp) const;  // operator<
-    bool isLtXZ(const V3Number& rhsp) const;  // operator< with XZ compared
+    bool isCaseEq(const V3Number& rhs) const;  // operator==
+    bool isLt(const V3Number& rhs) const;  // operator<
+    bool isLtXZ(const V3Number& rhs) const;  // operator< with XZ compared
     void isSigned(bool ssigned) { m_signed=ssigned; }
     bool isUnknown() const;
     uint32_t toUInt() const;
@@ -202,6 +204,8 @@ public:
     vluint64_t toUQuad() const;
     vlsint64_t toSQuad() const;
     string toString() const;
+    string toDecimalS() const;  // return ASCII signed decimal number
+    string toDecimalU() const;  // return ASCII unsigned decimal number
     double toDouble() const;
     uint32_t toHash() const;
     uint32_t dataWord(int word) const;
@@ -240,19 +244,20 @@ public:
     V3Number& opCLog2	(const V3Number& lhs);
     V3Number& opClean	(const V3Number& lhs, uint32_t bits);
     V3Number& opConcat	(const V3Number& lhs, const V3Number& rhs);
+    V3Number& opLenN	(const V3Number& lhs);
     V3Number& opRepl	(const V3Number& lhs, const V3Number& rhs);
-    V3Number& opRepl	(const V3Number& lhs, uint32_t rhs);
+    V3Number& opRepl    (const V3Number& lhs, uint32_t rhsval);
     V3Number& opStreamL	(const V3Number& lhs, const V3Number& rhs);
-    V3Number& opSel	(const V3Number& lhs, const V3Number& rhs, const V3Number& ths);
-    V3Number& opSel	(const V3Number& lhs, uint32_t rhs, uint32_t ths);
+    V3Number& opSel     (const V3Number& lhs, const V3Number& msb, const V3Number& lsb);
+    V3Number& opSel     (const V3Number& lhs, uint32_t msbval, uint32_t lsbval);
     V3Number& opSelInto	(const V3Number& lhs, const V3Number& lsb, int width);
-    V3Number& opSelInto	(const V3Number& lhs, int lsb, int width);
-    V3Number& opCond	(const V3Number& lhs, const V3Number& rhs, const V3Number& ths);
+    V3Number& opSelInto (const V3Number& lhs, int lsbval, int width);
+    V3Number& opCond    (const V3Number& lhs, const V3Number& if1s, const V3Number& if0s);
     V3Number& opCaseEq	(const V3Number& lhs, const V3Number& rhs);
     V3Number& opCaseNeq	(const V3Number& lhs, const V3Number& rhs);
     V3Number& opWildEq	(const V3Number& lhs, const V3Number& rhs);
     V3Number& opWildNeq	(const V3Number& lhs, const V3Number& rhs);
-    V3Number& opBufIf1	(const V3Number& lhs, const V3Number& rhs);
+    V3Number& opBufIf1  (const V3Number& ens, const V3Number& if1s);
     // "standard" math
     V3Number& opNot	(const V3Number& lhs);
     V3Number& opLogNot	(const V3Number& lhs);
@@ -319,7 +324,7 @@ public:
     // "N" - string operations
     V3Number& opConcatN	(const V3Number& lhs, const V3Number& rhs);
     V3Number& opReplN	(const V3Number& lhs, const V3Number& rhs);
-    V3Number& opReplN	(const V3Number& lhs, uint32_t rhs);
+    V3Number& opReplN   (const V3Number& lhs, uint32_t rhsval);
     V3Number& opEqN	(const V3Number& lhs, const V3Number& rhs);
     V3Number& opNeqN	(const V3Number& lhs, const V3Number& rhs);
     V3Number& opGtN	(const V3Number& lhs, const V3Number& rhs);
@@ -327,6 +332,6 @@ public:
     V3Number& opLtN	(const V3Number& lhs, const V3Number& rhs);
     V3Number& opLteN	(const V3Number& lhs, const V3Number& rhs);
 };
-inline ostream& operator<<(ostream& os, V3Number rhs) { return os<<rhs.ascii(); }
+inline std::ostream& operator<<(std::ostream& os, const V3Number& rhs) { return os<<rhs.ascii(); }
 
 #endif // Guard

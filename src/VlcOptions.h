@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,18 +23,18 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <string>
-#include <vector>
-#include <map>
-#include <set>
 
 #include "config_rev.h"
+
+#include <map>
+#include <set>
+#include <vector>
 
 //######################################################################
 // V3Options - Command line options
 
-typedef vector<string> VlStringList;
-typedef set<string> VlStringSet;
+typedef std::vector<string> VlStringList;
+typedef std::set<string> VlStringSet;
 
 class VlcOptions {
     // MEMBERS (general options)
@@ -52,7 +52,7 @@ private:
     bool onoff(const char* sw, const char* arg, bool& flag);
 
 public:
-    // CREATORS
+    // CONSTRUCTORS
     VlcOptions() {
 	m_annotateAll = false;
 	m_annotateMin = 10;
@@ -74,7 +74,7 @@ public:
     bool rank() const { return m_rank; }
     bool unlink() const { return m_unlink; }
     string writeFile() const { return m_writeFile; }
-    
+
     // METHODS (from main)
     static string version();
 };

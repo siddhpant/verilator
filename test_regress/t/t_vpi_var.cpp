@@ -91,11 +91,14 @@ unsigned int callback_count_strs_max = 500;
 #define CHECK_RESULT_CSTR_STRIP(got, exp) \
     CHECK_RESULT_CSTR(got+strspn(got, " "), exp)
 
+#define STRINGIFY(x) STRINGIFY2(x)
+#define STRINGIFY2(x) #x
+
 int _mon_check_mcd() {
     PLI_INT32 status;
 
     PLI_UINT32 mcd;
-    PLI_BYTE8* filename = (PLI_BYTE8*)"obj_dir/t_vpi_var/mcd_open.tmp";
+    PLI_BYTE8* filename = (PLI_BYTE8*)(STRINGIFY(TEST_OBJ_DIR) "/mcd_open.tmp");
     mcd = vpi_mcd_open(filename);
     CHECK_RESULT_NZ(mcd);
 
@@ -395,7 +398,7 @@ int _mon_check_string() {
       CHECK_RESULT_NZ(vh1);
 
       s_vpi_value v;
-      s_vpi_time t = { vpiSimTime, 0, 0};
+      s_vpi_time t = { vpiSimTime, 0, 0, 0.0};
       s_vpi_error_info e;
 
       v.format = vpiStringVal;
@@ -562,7 +565,7 @@ int mon_check() {
     if (int status = _mon_check_putget_str(NULL)) return status;
     if (int status = _mon_check_vlog_info()) return status;
 #ifndef IS_VPI
-    VerilatedVpiError::selfTest();
+    VerilatedVpi::selfTest();
 #endif
     return 0; // Ok
 }
@@ -602,7 +605,7 @@ void (*vlog_startup_routines[])() = {
 
 #else
 
-double sc_time_stamp () {
+double sc_time_stamp() {
     return main_time;
 }
 int main(int argc, char **argv, char **env) {
@@ -610,7 +613,7 @@ int main(int argc, char **argv, char **env) {
     Verilated::commandArgs(argc, argv);
     Verilated::debug(0);
 
-    VM_PREFIX* topp = new VM_PREFIX ("");  // Note null name - we're flattening it out
+    VM_PREFIX* topp = new VM_PREFIX("");  // Note null name - we're flattening it out
 
 #ifdef VERILATOR
 # ifdef TEST_VERBOSE
@@ -622,8 +625,8 @@ int main(int argc, char **argv, char **env) {
     Verilated::traceEverOn(true);
     VL_PRINTF("Enabling waves...\n");
     VerilatedVcdC* tfp = new VerilatedVcdC;
-    topp->trace (tfp, 99);
-    tfp->open ("obj_dir/t_vpi_var/simx.vcd");
+    topp->trace(tfp, 99);
+    tfp->open(STRINGIFY(TEST_OBJ_DIR) "/simx.vcd");
 #endif
 
     topp->eval();

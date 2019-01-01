@@ -3,7 +3,7 @@
 //
 // THIS MODULE IS PUBLICLY LICENSED
 //
-// Copyright 2001-2017 by Wilson Snyder.  This program is free software;
+// Copyright 2001-2018 by Wilson Snyder.  This program is free software;
 // you can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
 //
@@ -31,13 +31,18 @@
 #if (SYSTEMC_VERSION>=20050714)
     // SystemC 2.1.v1
 // cppcheck-suppress unusedFunction
-void VerilatedVcdSc::write_comment (const std::string &) {}
-void VerilatedVcdSc::trace (const unsigned int &, const std::string &, const char **) {}
+void VerilatedVcdSc::write_comment(const std::string &) {}
+void VerilatedVcdSc::trace(const unsigned int &, const std::string &, const char **) {}
 
 # define DECL_TRACE_METHOD_A(tp) \
     void VerilatedVcdSc::trace( const tp& object, const std::string& name ) {}
 # define DECL_TRACE_METHOD_B(tp) \
     void VerilatedVcdSc::trace( const tp& object, const std::string& name, int width ) {}
+
+#if (SYSTEMC_VERSION>=20171012)
+    DECL_TRACE_METHOD_A( sc_event )
+    DECL_TRACE_METHOD_A( sc_time )
+#endif
 
     DECL_TRACE_METHOD_A( bool )
     DECL_TRACE_METHOD_A( sc_dt::sc_bit )
@@ -76,8 +81,8 @@ void VerilatedVcdSc::trace (const unsigned int &, const std::string &, const cha
 #elif (SYSTEMC_VERSION>20011000)
     // SystemC 2.0.1
 // cppcheck-suppress unusedFunction
-void VerilatedVcdSc::write_comment (const sc_string &) {}
-void VerilatedVcdSc::trace (const unsigned int &, const sc_string &, const char **) {}
+void VerilatedVcdSc::write_comment(const sc_string &) {}
+void VerilatedVcdSc::trace(const unsigned int &, const sc_string &, const char **) {}
 
 #define DECL_TRACE_METHOD_A(tp) \
     void VerilatedVcdSc::trace( const tp& object, const sc_string& name ) {}
@@ -119,8 +124,8 @@ void VerilatedVcdSc::trace (const unsigned int &, const sc_string &, const char 
 #else
     // SystemC 1.2.1beta
 // cppcheck-suppress unusedFunction
-void VerilatedVcdSc::write_comment (const sc_string &) {}
-void VerilatedVcdSc::trace (const unsigned int &, const sc_string &, const char **) {}
+void VerilatedVcdSc::write_comment(const sc_string &) {}
+void VerilatedVcdSc::trace(const unsigned int &, const sc_string &, const char **) {}
 
 #define DECL_TRACE_METHOD_A(tp) \
     void VerilatedVcdSc::trace( const tp& object, const sc_string& name ) {}

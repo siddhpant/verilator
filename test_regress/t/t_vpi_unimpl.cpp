@@ -34,6 +34,9 @@
 unsigned int main_time = false;
 unsigned int callback_count = false;
 
+#define STRINGIFY(x) STRINGIFY2(x)
+#define STRINGIFY2(x) #x
+
 //======================================================================
 
 #define CHECK_RESULT_VH(got, exp) \
@@ -51,16 +54,16 @@ unsigned int callback_count = false;
 
 // Use cout to avoid issues with %d/%lx etc
 #define CHECK_RESULT(got, exp) \
-    if ((got != exp)) { \
-	cout<<dec<<"%Error: "<<FILENM<<":"<<__LINE__ \
-	   <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<endl;	\
+    if ((got) != (exp)) { \
+	std::cout<<std::dec<<"%Error: "<<FILENM<<":"<<__LINE__	\
+		  <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<std::endl;	\
 	return __LINE__; \
     }
 
 #define CHECK_RESULT_HEX(got, exp) \
-    if ((got != exp)) { \
-	cout<<dec<<"%Error: "<<FILENM<<":"<<__LINE__<<hex \
-	   <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<endl;	\
+    if ((got) != (exp)) { \
+	std::cout<<std::dec<<"%Error: "<<FILENM<<":"<<__LINE__<<std::hex \
+		 <<": GOT = "<<(got)<<"   EXP = "<<(exp)<<std::endl;	\
 	return __LINE__; \
     }
 
@@ -141,7 +144,7 @@ int mon_check() {
 //======================================================================
 
 
-double sc_time_stamp () {
+double sc_time_stamp() {
     return main_time;
 }
 int main(int argc, char **argv, char **env) {
@@ -150,7 +153,7 @@ int main(int argc, char **argv, char **env) {
     Verilated::debug(0);
     Verilated::fatalOnVpiError(0); // we're going to be checking for these errors do don't crash out
 
-    VM_PREFIX* topp = new VM_PREFIX ("");  // Note null name - we're flattening it out
+    VM_PREFIX* topp = new VM_PREFIX("");  // Note null name - we're flattening it out
 
 #ifdef VERILATOR
 # ifdef TEST_VERBOSE
@@ -162,8 +165,8 @@ int main(int argc, char **argv, char **env) {
     Verilated::traceEverOn(true);
     VL_PRINTF("Enabling waves...\n");
     VerilatedVcdC* tfp = new VerilatedVcdC;
-    topp->trace (tfp, 99);
-    tfp->open ("obj_dir/t_vpi_var/simx.vcd");
+    topp->trace(tfp, 99);
+    tfp->open(STRINGIFY(TEST_OBJ_DIR) "/simx.vcd");
 #endif
 
     topp->eval();

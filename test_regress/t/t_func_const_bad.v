@@ -15,7 +15,7 @@ module t;
 
    // Speced Illegal: void
 
-   // Speced Illegal: dotted 
+   // Speced Illegal: dotted
    localparam EIGHT = 8;
    localparam B2 = f_bad_dotted(2);
    function integer f_bad_dotted(input [31:0] a);
@@ -35,7 +35,7 @@ module t;
    localparam B4 = f_bad_infinite(3);
    function integer f_bad_infinite(input [31:0] a);
       while (1) begin
-	 f_bad_infinite = 0;
+         f_bad_infinite = 0;
       end
    endfunction
 

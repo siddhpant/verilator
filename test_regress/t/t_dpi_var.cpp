@@ -51,7 +51,7 @@ void mon_class_name(const char* namep) {
     VL_PRINTF("-     mon_class_name(\"%s\");\n", namep);
 #endif
     // Check the C's calling name of "" doesn't lead to extra dots in the name()
-    if (namep && namep[0]=='.') vl_fatal(__FILE__,__LINE__,"", (string("Unexp class name ")+namep).c_str());
+    if (namep && namep[0]=='.') vl_fatal(__FILE__,__LINE__,"", (std::string("Unexp class name ")+namep).c_str());
 }
 
 extern "C" void mon_scope_name(const char* namep);
@@ -60,8 +60,8 @@ void mon_scope_name(const char* namep) {
 #ifdef TEST_VERBOSE
     VL_PRINTF("-     mon_scope_name('%s', \"%s\");\n", modp, namep);
 #endif
-    if (strcmp(namep,"t.sub")) vl_fatal(__FILE__,__LINE__,"", (string("Unexp scope name ")+namep).c_str());
-    if (strcmp(modp,"t.sub")) vl_fatal(__FILE__,__LINE__,"", (string("Unexp dpiscope name ")+modp).c_str());
+    if (strcmp(namep,"t.sub")) vl_fatal(__FILE__,__LINE__,"", (std::string("Unexp scope name ")+namep).c_str());
+    if (strcmp(modp,"t.sub")) vl_fatal(__FILE__,__LINE__,"", (std::string("Unexp dpiscope name ")+modp).c_str());
 }
 
 extern "C" void mon_register_b(const char* namep, int isOut);
@@ -111,7 +111,7 @@ void mon_eval() {
 
 unsigned int main_time = false;
 
-double sc_time_stamp () {
+double sc_time_stamp() {
     return main_time;
 }
 int main(int argc, char **argv, char **env) {
@@ -119,7 +119,7 @@ int main(int argc, char **argv, char **env) {
     Verilated::commandArgs(argc, argv);
     Verilated::debug(0);
 
-    VM_PREFIX* topp = new VM_PREFIX ("");  // Note null name - we're flattening it out
+    VM_PREFIX* topp = new VM_PREFIX("");  // Note null name - we're flattening it out
 
 #ifdef VERILATOR
 # ifdef TEST_VERBOSE

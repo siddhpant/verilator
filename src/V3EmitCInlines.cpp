@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,62 +20,47 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <cmath>
-#include <map>
-#include <vector>
 
 #include "V3Global.h"
 #include "V3EmitC.h"
 #include "V3EmitCBase.h"
 #include "V3Stats.h"
 
-#define EMITCINLINES_NUM_CONSTW	10	// Number of VL_CONST_W_*X's in verilated.h (IE VL_CONST_W_9X is last)
+#include <cmath>
+#include <cstdarg>
+#include <map>
+#include <vector>
 
 //######################################################################
 
 class EmitCInlines : EmitCBaseVisitor {
     // STATE
-    vector<V3Double0>	m_wordWidths;	// What sizes are used?
 
     // METHODS
     void emitInt();
 
     // VISITORS
-    virtual void visit(AstVar* nodep) {
-	// All wide constants load into variables, so we can just hunt for them
-	nodep->iterateChildren(*this);
-	int words = nodep->widthWords();
-	if (words >= EMITCINLINES_NUM_CONSTW ) {
-	    if (int(m_wordWidths.size()) <= words) {
-		m_wordWidths.resize(words+5);
-	    }
-	    ++ m_wordWidths.at(words);
-	    v3Global.needHInlines(true);
-	}
-    }
     virtual void visit(AstBasicDType* nodep) {
-	if (nodep->keyword() == AstBasicDTypeKwd::STRING) {
-	    v3Global.needHeavy(true);  // #include <string> via verilated_heavy.h when we create symbol file
-	}
+        if (nodep->keyword() == AstBasicDTypeKwd::STRING) {
+            // Request #include <string> via verilated_heavy.h when we create symbol file
+            v3Global.needHeavy(true);
+        }
     }
 
     // NOPs
     virtual void visit(AstNodeStmt*) {}
     // Default
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     //---------------------------------------
     // ACCESSORS
 public:
     explicit EmitCInlines(AstNetlist* nodep) {
-	nodep->accept(*this);
-	if (v3Global.needHInlines()) {
-	    emitInt();
-	}
+        iterate(nodep);
+        if (v3Global.needHInlines()) {
+            emitInt();
+        }
     }
 };
 
@@ -94,33 +79,10 @@ void EmitCInlines::emitInt() {
 
     puts("\n//======================\n\n");
 
-    for (unsigned words=0; words<m_wordWidths.size(); words++) {
-	if (m_wordWidths.at(words)) {
-	    puts("#ifndef VL_HAVE_CONST_W_"+cvtToStr(words)+"X\n");
-	    puts("# define VL_HAVE_CONST_W_"+cvtToStr(words)+"X\n");
-	    puts("static inline WDataOutP VL_CONST_W_"+cvtToStr(words)+"X(int obits, WDataOutP o\n");
-	    puts("\t");
-	    for (int i=words-1; i>=0; --i) {
-		puts(",IData d"+cvtToStr(i));
-		if (i && (i % 8 == 0)) puts("\n\t");
-	    }
-	    puts(") {\n");
-	    puts("   ");
-	    for (int i=words-1; i>=0; --i) {
-		puts(" o["+cvtToStr(i)+"]=d"+cvtToStr(i)+";");
-		if (i && (i % 8 == 0)) puts("\n   ");
-	    }
-	    puts("\n");
-	    puts("    for(int i="+cvtToStr(words)+";i<VL_WORDS_I(obits);i++) o[i] = (IData)0x0;\n");
-	    puts("    return o;\n");
-	    puts("}\n");
-	    puts("#endif\n");
-	    puts("\n");
-	}
-    }
+    // Placeholder - v3Global.needHInlines(true) currently not used
 
     puts("//======================\n\n");
-    puts("#endif  /*guard*/\n");
+    puts("#endif // guard\n");
 }
 
 //######################################################################

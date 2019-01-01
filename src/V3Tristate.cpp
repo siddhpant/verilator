@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -27,9 +27,9 @@
 // Over each module, from child to parent:
 //   Build a graph, connecting signals together so we can propagate tristates
 //     Variable becomes tristate with
-//	 VAR->isInout
-//	 VAR->isPullup/isPulldown (converted to AstPullup/AstPulldown
-//	 BufIf0/1
+//       VAR->isInoutish
+//       VAR->isPullup/isPulldown (converted to AstPullup/AstPulldown
+//       BufIf0/1
 //   All variables on the LHS need to become tristate when there is:
 //	 CONST-> with Z value on the RHS of an assignment
 //	 AstPin with lower connection a tristate
@@ -59,11 +59,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <map>
 
 #include "V3Global.h"
 #include "V3Tristate.h"
@@ -74,16 +69,16 @@
 #include "V3Stats.h"
 #include "V3Graph.h"
 
+#include <algorithm>
+#include <cstdarg>
+#include <map>
+
 //######################################################################
 
 class TristateBaseVisitor : public AstNVisitor {
 public:
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //######################################################################
@@ -99,19 +94,20 @@ public:
 	: V3GraphVertex(graphp)
 	, m_nodep(nodep), m_isTristate(false), m_feedsTri(false), m_processed(false) {}
     virtual ~TristateVertex() {}
-    // Accessors
+    // ACCESSORS
     AstNode* nodep() const { return m_nodep; }
-    AstVar* varp() const { return nodep()->castVar(); }
+    AstVar* varp() const { return VN_CAST(nodep(), Var); }
     virtual string name() const {
 	return ((isTristate() ? "tri\\n"
-		 :feedsTri() ? "feed\\n" : "-\\n")
-		+(nodep()->prettyTypeName()+" "+cvtToStr((void*)nodep()))); }
+                 : feedsTri() ? "feed\\n" : "-\\n")
+                +(nodep()->prettyTypeName()+" "+cvtToHex(nodep()))); }
     virtual string dotColor() const {
 	return (varp()
 		? (isTristate() ? "darkblue"
 		   :feedsTri() ? "blue" : "lightblue")
 		: (isTristate() ? "darkgreen"
 		   :feedsTri() ? "green" : "lightgreen")); }
+    virtual FileLine* fileline() const { return nodep()->fileline(); }
     void isTristate(bool flag) { m_isTristate = flag; }
     bool isTristate() const { return m_isTristate; }
     void feedsTri(bool flag) { m_feedsTri = flag; }
@@ -142,14 +138,10 @@ public:
 
 private:
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     TristateVertex* makeVertex(AstNode* nodep) {
-	TristateVertex* vertexp = (TristateVertex*)(nodep->user5p());
+        TristateVertex* vertexp = reinterpret_cast<TristateVertex*>(nodep->user5p());
 	if (!vertexp) {
 	    UINFO(6,"         New vertex "<<nodep<<endl);
 	    vertexp = new TristateVertex(&m_graph, nodep);
@@ -180,7 +172,7 @@ private:
 	    // A variable is tristated.  Find all of the LHS VARREFs that drive this signal now need tristate drivers
 	    for (V3GraphEdge* edgep = vtxp->inBeginp(); edgep; edgep=edgep->inNextp()) {
 		TristateVertex* vvertexp = dynamic_cast<TristateVertex*>(edgep->fromp());
-		if (AstVarRef* refp = vvertexp->nodep()->castVarRef()) {
+                if (const AstVarRef* refp = VN_CAST(vvertexp->nodep(), VarRef)) {
 		    if (refp->lvalue()
 			// Doesn't hurt to not check if already set, but by doing so when we
 			// print out the debug messages, we'll see this node at level 0 instead.
@@ -221,7 +213,8 @@ public:
 	    TristateVertex* vvertexp = static_cast<TristateVertex*>(itp);
 	    if (vvertexp->isTristate() && !vvertexp->processed()) {
 		// Not v3errorSrc as no reason to stop the world
-		vvertexp->nodep()->v3error("Unsupported tristate construct (in graph; not converted): "<<vvertexp->nodep()->prettyTypeName());
+                vvertexp->nodep()->v3error("Unsupported tristate construct"
+                                           " (in graph; not converted): "<<vvertexp->nodep()->prettyTypeName());
 	    }
 	}
 	m_graph.clear();
@@ -231,10 +224,10 @@ public:
 	//if (debug()>=9) m_graph.dumpDotFilePrefixed("tri_pre__"+nodep->name());
 	UINFO(9," Walking "<<nodep<<endl);
 	for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
-	    graphWalkRecurseFwd((TristateVertex*)itp, 0);
+            graphWalkRecurseFwd(static_cast<TristateVertex*>(itp), 0);
 	}
 	for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
-	    graphWalkRecurseBack((TristateVertex*)itp, 0);
+            graphWalkRecurseBack(static_cast<TristateVertex*>(itp), 0);
 	}
 	if (debug()>=9) m_graph.dumpDotFilePrefixed("tri_pos__"+nodep->name());
     }
@@ -245,15 +238,15 @@ public:
 	new V3GraphEdge(&m_graph, makeVertex(fromp), makeVertex(top), 1);
     }
     bool isTristate(AstNode* nodep) {
-	TristateVertex* vertexp = (TristateVertex*)(nodep->user5p());
+        TristateVertex* vertexp = reinterpret_cast<TristateVertex*>(nodep->user5p());
 	return vertexp && vertexp->isTristate();
     }
     bool feedsTri(AstNode* nodep) {
-	TristateVertex* vertexp = (TristateVertex*)(nodep->user5p());
+        TristateVertex* vertexp = reinterpret_cast<TristateVertex*>(nodep->user5p());
 	return vertexp && vertexp->feedsTri();
     }
     void didProcess(AstNode* nodep) {
-	TristateVertex* vertexp = (TristateVertex*)(nodep->user5p());
+        TristateVertex* vertexp = reinterpret_cast<TristateVertex*>(nodep->user5p());
 	if (!vertexp) {
 	    // Not v3errorSrc as no reason to stop the world
 	    nodep->v3error("Unsupported tristate construct (not in propagation graph): "<<nodep->prettyTypeName());
@@ -269,7 +262,7 @@ public:
 	for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
 	    TristateVertex* vvertexp = static_cast<TristateVertex*>(itp);
 	    if (vvertexp->isTristate()) {
-		if (AstVar* nodep = vvertexp->nodep()->castVar()) {
+                if (AstVar* nodep = VN_CAST(vvertexp->nodep(), Var)) {
 		    v.push_back(nodep);
 		}
 	    }
@@ -301,16 +294,21 @@ class TristatePinVisitor : public TristateBaseVisitor {
     virtual void visit(AstArraySel* nodep) {
 	// Doesn't work because we'd set lvalue on the array index's var
 	if (m_lvalue) nodep->v3fatalSrc("ArraySel conversion to output, under tristate node");
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
+    }
+    virtual void visit(AstSliceSel* nodep) {
+        // Doesn't work because we'd set lvalue on the array index's var
+        if (m_lvalue) nodep->v3fatalSrc("SliceSel conversion to output, under tristate node");
+        iterateChildren(nodep);
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
     TristatePinVisitor(AstNode* nodep, TristateGraph& tgraph, bool lvalue)
 	: m_tgraph(tgraph), m_lvalue(lvalue) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~TristatePinVisitor() {}
 };
@@ -388,7 +386,7 @@ class TristateVisitor : public TristateBaseVisitor {
 	    else m_modp->addStmtp(newp);
 	    invarp->user1p(newp); // find envar given invarp
 	}
-	return invarp->user1p()->castVar();
+        return VN_CAST(invarp->user1p(), Var);
     }
 
     AstVar* getCreateOutVarp(AstVar* invarp) {
@@ -403,7 +401,7 @@ class TristateVisitor : public TristateBaseVisitor {
 	    else m_modp->addStmtp(newp);
 	    invarp->user4p(newp);  // find outvar given invarp
 	}
-	return invarp->user4p()->castVar();
+        return VN_CAST(invarp->user4p(), Var);
     }
 
     AstVar* getCreateUnconnVarp(AstNode* fromp, AstNodeDType* dtypep) {
@@ -443,7 +441,7 @@ class TristateVisitor : public TristateBaseVisitor {
     }
 
     void setPullDirection(AstVar* varp, AstPull* pullp) {
-	AstPull* oldpullp = (AstPull*)varp->user3p();
+        AstPull* oldpullp = static_cast<AstPull*>(varp->user3p());
 	if (!oldpullp) {
 	    varp->user3p(pullp); //save off to indicate the pull direction
 	} else {
@@ -462,10 +460,10 @@ class TristateVisitor : public TristateBaseVisitor {
 	    nodep->v3error("Unsupported LHS tristate construct: "<<nodep->prettyTypeName());
 	}
 	// Ignore Var's because they end up adjacent to statements
-	if ((nodep->op1p() && nodep->op1p()->user1p() && !nodep->op1p()->castVar())
-	    || (nodep->op2p() && nodep->op2p()->user1p() && !nodep->op1p()->castVar())
-	    || (nodep->op3p() && nodep->op3p()->user1p() && !nodep->op1p()->castVar())
-	    || (nodep->op4p() && nodep->op4p()->user1p() && !nodep->op1p()->castVar())) {
+        if ((nodep->op1p() && nodep->op1p()->user1p() && !VN_IS(nodep->op1p(), Var))
+            || (nodep->op2p() && nodep->op2p()->user1p() && !VN_IS(nodep->op1p(), Var))
+            || (nodep->op3p() && nodep->op3p()->user1p() && !VN_IS(nodep->op1p(), Var))
+            || (nodep->op4p() && nodep->op4p()->user1p() && !VN_IS(nodep->op1p(), Var))) {
 	    nodep->v3error("Unsupported tristate construct: "<<nodep->prettyTypeName());
 	}
     }
@@ -541,7 +539,7 @@ class TristateVisitor : public TristateBaseVisitor {
 		outvarp->user3p(invarp->user3p()); // AstPull* propagation
 		if (invarp->user3p()) UINFO(9, "propagate pull to "<<outvarp<<endl);
 	    } else if (invarp->user1p()) {
-		envarp = invarp->user1p()->castVar();  // From CASEEQ, foo === 1'bz
+                envarp = VN_CAST(invarp->user1p(), Var);  // From CASEEQ, foo === 1'bz
 	    }
 
 	    AstNode* orp = NULL;
@@ -601,7 +599,7 @@ class TristateVisitor : public TristateBaseVisitor {
 		// This is the final resolution of the tristate, so we apply
 		// the pull direction to any undriven pins.
 		V3Number pull(invarp->fileline(), lhsp->width());
-		AstPull* pullp = (AstPull*)lhsp->user3p();
+                AstPull* pullp = static_cast<AstPull*>(lhsp->user3p());
 		if (pullp && pullp->direction() == 1) {
 		    pull.setAllBits1();
 		    UINFO(9,"Has pullup "<<pullp<<endl);
@@ -670,7 +668,7 @@ class TristateVisitor : public TristateBaseVisitor {
 
     virtual void visit(AstCond* nodep) {
 	if (m_graphing) {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    if (m_alhs) {
 		associateLogic(nodep, nodep->expr1p());
 		associateLogic(nodep, nodep->expr2p());
@@ -680,7 +678,7 @@ class TristateVisitor : public TristateBaseVisitor {
 	    }
 	} else {
 	    if (m_alhs && nodep->user1p()) { nodep->v3error("Unsupported LHS tristate construct: "<<nodep->prettyTypeName()); return; }
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    UINFO(9,dbgState()<<nodep<<endl);
 	    // Generate the new output enable signal for this cond if either
 	    // expression 1 or 2 have an output enable '__en' signal. If the
@@ -709,7 +707,7 @@ class TristateVisitor : public TristateBaseVisitor {
 
     virtual void visit(AstSel* nodep) {
 	if (m_graphing) {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    if (m_alhs) {
 		associateLogic(nodep, nodep->fromp());
 	    } else {
@@ -725,9 +723,9 @@ class TristateVisitor : public TristateBaseVisitor {
 		    if (debug()>=9) newp->dumpTree(cout,"-assign-sel; ");
 		    m_tgraph.didProcess(nodep);
 		}
-		nodep->iterateChildren(*this);
+                iterateChildren(nodep);
 	    } else {
-		nodep->iterateChildren(*this);
+                iterateChildren(nodep);
 		UINFO(9,dbgState()<<nodep<<endl);
 		if (nodep->lsbp()->user1p()) {
 		    nodep->v3error("Unsupported RHS tristate construct: "<<nodep->prettyTypeName());
@@ -746,7 +744,7 @@ class TristateVisitor : public TristateBaseVisitor {
 
     virtual void visit(AstConcat* nodep) {
 	if (m_graphing) {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    if (m_alhs) {
 		associateLogic(nodep, nodep->lhsp());
 		associateLogic(nodep, nodep->rhsp());
@@ -772,9 +770,9 @@ class TristateVisitor : public TristateBaseVisitor {
 						     nodep->rhsp()->width()));
 		    m_tgraph.didProcess(nodep);
 		}
-		nodep->iterateChildren(*this);
+                iterateChildren(nodep);
 	    } else {
-		nodep->iterateChildren(*this);
+                iterateChildren(nodep);
 		UINFO(9,dbgState()<<nodep<<endl);
 		// Generate the new output enable signal, just as a concat identical to the data concat
 		AstNode* expr1p = nodep->lhsp();
@@ -795,7 +793,7 @@ class TristateVisitor : public TristateBaseVisitor {
 
     virtual void visit(AstBufIf1* nodep) {
 	// For BufIf1, the enable is the LHS expression
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	UINFO(9,dbgState()<<nodep<<endl);
 	if (m_graphing) {
 	    associateLogic(nodep->rhsp(), nodep);
@@ -823,7 +821,7 @@ class TristateVisitor : public TristateBaseVisitor {
     }
 
     void visitAndOr(AstNodeBiop* nodep, bool isAnd) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	UINFO(9,dbgState()<<nodep<<endl);
 	if (m_graphing) {
 	    associateLogic(nodep->lhsp(), nodep);
@@ -885,9 +883,9 @@ class TristateVisitor : public TristateBaseVisitor {
 	    if (nodep->user2() & U2_GRAPHING) return;
 	    nodep->user2(U2_GRAPHING);
 	    m_logicp = nodep;
-	    nodep->rhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
 	    m_alhs = true;
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    m_alhs = false;
 	    associateLogic(nodep->rhsp(), nodep);
 	    associateLogic(nodep, nodep->lhsp());
@@ -895,7 +893,7 @@ class TristateVisitor : public TristateBaseVisitor {
 	} else {
 	    if (nodep->user2() & U2_NONGRAPH) return;  // Iterated here, or created assignment to ignore
 	    nodep->user2(U2_NONGRAPH);
-	    nodep->rhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
 	    UINFO(9,dbgState()<<nodep<<endl);
 	    if (debug()>=9) nodep->dumpTree(cout,"-assign: ");
 	    // if the rhsp of this assign statement has an output enable driver,
@@ -909,7 +907,7 @@ class TristateVisitor : public TristateBaseVisitor {
 		m_tgraph.didProcess(nodep);
 	    }
 	    m_alhs = true;  // And user1p() will indicate tristate equation, if any
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    m_alhs = false;
 	}
     }
@@ -922,29 +920,29 @@ class TristateVisitor : public TristateBaseVisitor {
 
     void visitCaseEq(AstNodeBiop* nodep, bool neq) {
 	if (m_graphing) {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	} else {
 	    checkUnhandled(nodep);
 	    // Unsupported: A === 3'b000 should compare with the enables, but we don't do
 	    // so at present, we only compare if there is a z in the equation.
 	    // Otherwise we'd need to attach an enable to every signal, then optimize them
 	    // away later when we determine the signal has no tristate
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    UINFO(9,dbgState()<<nodep<<endl);
-	    AstConst* constp = nodep->lhsp()->castConst();  // Constification always moves const to LHS
-	    AstVarRef* varrefp = nodep->rhsp()->castVarRef();  // Input variable
+            const AstConst* constp = VN_CAST(nodep->lhsp(), Const);  // Constification always moves const to LHS
+            AstVarRef* varrefp = VN_CAST(nodep->rhsp(), VarRef);  // Input variable
 	    if (constp && constp->user1p() && varrefp) {
 		// 3'b1z0 -> ((3'b101 == in__en) && (3'b100 == in))
 		varrefp->unlinkFrBack();
 		FileLine* fl = nodep->fileline();
-		V3Number oneIfEn = constp->user1p()->castConst()->num();  // visit(AstConst) already split into en/ones
+                V3Number oneIfEn = VN_CAST(constp->user1p(), Const)->num();  // visit(AstConst) already split into en/ones
 		V3Number oneIfEnOne = constp->num();
 		AstVar* envarp = getCreateEnVarp(varrefp->varp());
-		AstNode* newp = new AstLogAnd (fl, new AstEq (fl, new AstConst(fl, oneIfEn),
-							      new AstVarRef(fl, envarp, false)),
-					       // Keep the caseeq if there are X's present
-					       new AstEqCase(fl, new AstConst(fl, oneIfEnOne),
-							     varrefp));
+                AstNode* newp = new AstLogAnd(fl, new AstEq(fl, new AstConst(fl, oneIfEn),
+                                                            new AstVarRef(fl, envarp, false)),
+                                              // Keep the caseeq if there are X's present
+                                              new AstEqCase(fl, new AstConst(fl, oneIfEnOne),
+                                                            varrefp));
 		if (neq) newp = new AstLogNot(fl, newp);
 		UINFO(9,"       newceq "<<newp<<endl);
 		if (debug()>=9) nodep->dumpTree(cout,"-caseeq-old: ");
@@ -957,11 +955,11 @@ class TristateVisitor : public TristateBaseVisitor {
 	}
     }
     void visitEqNeqWild(AstNodeBiop* nodep) {
-	if (!nodep->rhsp()->castConst()) {
+        if (!VN_IS(nodep->rhsp(), Const)) {
 	    nodep->v3error("Unsupported: RHS of ==? or !=? must be constant to be synthesizable");  // Says spec.
 	    // rhs we want to keep X/Z intact, so otherwise ignore
 	}
-	nodep->lhsp()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->lhsp());
 	if (nodep->lhsp()->user1p()) { nodep->v3error("Unsupported LHS tristate construct: "<<nodep->prettyTypeName()); return; }
     }
     virtual void visit(AstEqCase* nodep) {
@@ -979,32 +977,37 @@ class TristateVisitor : public TristateBaseVisitor {
 
     virtual void visit(AstPull* nodep) {
 	UINFO(9,dbgState()<<nodep<<endl);
-	if (m_graphing) {
-	    if (AstVarRef* lhsp = nodep->lhsp()->castVarRef()) {
-		lhsp->lvalue(true);
-		m_logicp = nodep;
-		m_tgraph.setTristate(nodep);
-		associateLogic(nodep, lhsp->varp());
-		m_logicp = NULL;
-	    } else {
-		nodep->v3error("Unsupported pullup/down (weak driver) construct.");
-	    }
-	} else {
-	    // Replace any pullup/pulldowns with assignw logic and set the
-	    // direction of the pull in the user3() data on the var.  Given
-	    // the complexity of merging tristate drivers at any level, the
-	    // current limitation of this implementation is that a pullup/down
-	    // gets applied to all bits of a bus and a bus cannot have drivers
-	    // in opposite directions on indvidual pins.
-	    if (AstVarRef* lhsp = nodep->lhsp()->castVarRef()) {
-		lhsp->lvalue(true);
-		m_tgraph.didProcess(nodep);
-		m_tgraph.didProcess(lhsp->varp());
-		AstVar* varp = lhsp->varp();
-		setPullDirection(varp, nodep);
-	    } else {
-		nodep->v3error("Unsupported pullup/down (weak driver) construct.");
-	    }
+        AstVarRef* varrefp = NULL;
+        if (VN_IS(nodep->lhsp(), VarRef)) {
+            varrefp = VN_CAST(nodep->lhsp(), VarRef);
+        } else if (VN_IS(nodep->lhsp(), Sel)
+                   && VN_IS(VN_CAST(nodep->lhsp(), Sel)->fromp(), VarRef)) {
+            varrefp = VN_CAST(VN_CAST(nodep->lhsp(), Sel)->fromp(), VarRef);
+        }
+        if (!varrefp) {
+            if (debug()>=4) nodep->dumpTree(cout, "- ");
+            nodep->v3error("Unsupported pullup/down (weak driver) construct.");
+        } else {
+            if (m_graphing) {
+                varrefp->lvalue(true);
+                m_logicp = nodep;
+                m_tgraph.setTristate(nodep);
+                associateLogic(nodep, varrefp->varp());
+                m_logicp = NULL;
+            } else {
+                // Replace any pullup/pulldowns with assignw logic and set the
+                // direction of the pull in the user3() data on the var.  Given
+                // the complexity of merging tristate drivers at any level, the
+                // current limitation of this implementation is that a pullup/down
+                // gets applied to all bits of a bus and a bus cannot have drivers
+                // in opposite directions on indvidual pins.
+                varrefp->lvalue(true);
+                m_tgraph.didProcess(nodep);
+                m_tgraph.didProcess(varrefp->varp());
+                setPullDirection(varrefp->varp(), nodep);
+            }
+        }
+        if (!m_graphing) {
 	    nodep->unlinkFrBack();
 	    pushDeletep(nodep); VL_DANGLING(nodep);  // Node must persist as user3p points to it
 	}
@@ -1017,14 +1020,14 @@ class TristateVisitor : public TristateBaseVisitor {
 		associateLogic(nodep->exprp(), nodep);
 		associateLogic(nodep, nodep->exprp());
 	    }
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    m_logicp = NULL;
 	} else {
 	    // All heavy lifting completed in graph visitor.
 	    if (nodep->exprp()) {
 		m_tgraph.didProcess(nodep);
 	    }
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
     }
 
@@ -1051,11 +1054,11 @@ class TristateVisitor : public TristateBaseVisitor {
 	    if (nodep->user2() & U2_GRAPHING) return;  // This pin is already expanded
 	    nodep->user2(U2_GRAPHING);
 	    // Find child module's new variables.
-	    AstVar* enModVarp = (AstVar*) nodep->modVarp()->user1p();
+            AstVar* enModVarp = static_cast<AstVar*>(nodep->modVarp()->user1p());
 	    if (!enModVarp) {
 		if (nodep->exprp()) {
 		    // May have an output only that later connects to a tristate, so simplify now.
-		    V3Inst::pinReconnectSimple(nodep, m_cellp, m_modp, false);
+                    V3Inst::pinReconnectSimple(nodep, m_cellp, false);
 		}
 		iteratePinGuts(nodep);
 		return; // No __en signals on this pin
@@ -1064,23 +1067,26 @@ class TristateVisitor : public TristateBaseVisitor {
 	    UINFO(9,dbgState()<<nodep<<endl);
 	    if (debug()>=9) nodep->dumpTree(cout,"-pin-pre: ");
 
-	    // Empty/in-only; need Z to propagate
-	    bool inDeclProcessing = (nodep->exprp()
-				     && nodep->modVarp()->isInOnly()
-				     // Need to consider the original state instead of current state
-				     // as we converted tristates to inputs, which do not want to have this.
-				     && !nodep->modVarp()->isDeclOutput());
-	    if (!nodep->exprp()) { // No-connect; covert to empty connection
-		UINFO(5,"Unconnected pin terminate "<<nodep<<endl);
-		AstVar* ucVarp = getCreateUnconnVarp(nodep, nodep->modVarp()->dtypep());
-		nodep->exprp(new AstVarRef(nodep->fileline(), ucVarp,
-					   nodep->modVarp()->isOutput()));
+            // Empty/in-only; need Z to propagate
+            bool inDeclProcessing = (nodep->exprp()
+                                     && nodep->modVarp()->direction() == VDirection::INPUT
+                                     // Need to consider the original state
+                                     // instead of current state as we converted
+                                     // tristates to inputs, which do not want
+                                     // to have this.
+                                     && !nodep->modVarp()->declDirection().isWritable());
+            if (!nodep->exprp()) {  // No-connect; covert to empty connection
+                UINFO(5,"Unconnected pin terminate "<<nodep<<endl);
+                AstVar* ucVarp = getCreateUnconnVarp(nodep, nodep->modVarp()->dtypep());
+                nodep->exprp(new AstVarRef(nodep->fileline(), ucVarp,
+                                           // We converted, so use declaration output state
+                                           nodep->modVarp()->declDirection().isWritable()));
 		m_tgraph.setTristate(ucVarp);
 		// We don't need a driver on the wire; the lack of one will default to tristate
 	    } else if (inDeclProcessing) {   // Not an input that was a converted tristate
 		// Input only may have driver in underneath module which would stomp
 		// the input value.  So make a temporary connection.
-		AstAssignW* reAssignp = V3Inst::pinReconnectSimple(nodep, m_cellp, m_modp, true, true);
+                AstAssignW* reAssignp = V3Inst::pinReconnectSimple(nodep, m_cellp, true, true);
 		UINFO(5,"Input pin buffering: "<<reAssignp<<endl);
 		m_tgraph.setTristate(reAssignp->lhsp());
 	    }
@@ -1111,10 +1117,12 @@ class TristateVisitor : public TristateBaseVisitor {
 	    }
 	    // Create new output pin
 	    AstAssignW* outAssignp = NULL;  // If reconnected, the related assignment
-	    AstPin* outpinp;
-	    {
-		AstVar* outModVarp = (AstVar*) nodep->modVarp()->user4p();
-		if (!outModVarp) nodep->v3fatalSrc("Unlinked");
+            AstPin* outpinp = NULL;
+            AstVar* outModVarp = static_cast<AstVar*>(nodep->modVarp()->user4p());
+            if (!outModVarp) {
+                // At top, no need for __out as might be input only. Otherwise resolvable.
+                if (!m_modp->isTop()) nodep->v3fatalSrc("Unlinked");
+            } else {
 		AstNode* outexprp = nodep->exprp()->cloneTree(false);  // Note has lvalue() set
 		outpinp = new AstPin(nodep->fileline(),
 				     nodep->pinNum(),
@@ -1132,7 +1140,7 @@ class TristateVisitor : public TristateBaseVisitor {
 		    TristatePinVisitor visitor (outexprp, m_tgraph, true);
 		}
 		if (debug()>=9) outpinp->dumpTree(cout,"-pin-opr: ");
-		outAssignp = V3Inst::pinReconnectSimple(outpinp, m_cellp, m_modp, true);  // Note may change outpinp->exprp()
+                outAssignp = V3Inst::pinReconnectSimple(outpinp, m_cellp, true);  // Note may change outpinp->exprp()
 		if (debug()>=9) outpinp->dumpTree(cout,"-pin-out: ");
 		if (debug()>=9 && outAssignp) outAssignp->dumpTree(cout,"-pin-out: ");
 		// Must still iterate the outAssignp, as need to build output equation
@@ -1140,21 +1148,26 @@ class TristateVisitor : public TristateBaseVisitor {
 
 	    // Existing pin becomes an input, and we mark each resulting signal as tristate
 	    TristatePinVisitor visitor (nodep->exprp(), m_tgraph, false);
-	    AstNode* inAssignp = V3Inst::pinReconnectSimple(nodep, m_cellp, m_modp, true);  // Note may change nodep->exprp()
+            AstNode* inAssignp = V3Inst::pinReconnectSimple(nodep, m_cellp, true);  // Note may change nodep->exprp()
 	    if (debug()>=9) nodep->dumpTree(cout,"-pin-in:  ");
 	    if (debug()>=9 && inAssignp) inAssignp->dumpTree(cout,"-pin-as:  ");
 
 	    // Connect enable to output signal
 	    AstVarRef* exprrefp;  // Tristate variable that the Pin's expression refers to
 	    if (!outAssignp) {
-		exprrefp = outpinp->exprp()->castVarRef();
+                if (!outpinp) {
+                    exprrefp = NULL;  // Primary input only
+                } else {
+                    // pinReconnect should have converted this
+                    exprrefp = VN_CAST(outpinp->exprp(), VarRef);
+                    if (!exprrefp) nodep->v3error("Unsupported tristate port expression: "<<nodep->exprp()->prettyTypeName());
+                }
 	    } else {
-		exprrefp = outAssignp->rhsp()->castVarRef();  // This should be the same var as the output pin
+                // pinReconnect should have converted this
+                exprrefp = VN_CAST(outAssignp->rhsp(), VarRef);  // This should be the same var as the output pin
+                if (!exprrefp) nodep->v3error("Unsupported tristate port expression: "<<nodep->exprp()->prettyTypeName());
 	    }
-	    if (!exprrefp) { // deal with simple varref port
-		// pinReconnect should have converted this
-		nodep->v3error("Unsupported tristate port expression: "<<nodep->exprp()->prettyTypeName());
-	    } else {
+            if (exprrefp) {
 		UINFO(9,"outref "<<exprrefp<<endl);
 		exprrefp->user1p(enrefp);  // Mark as now tristated; iteration will pick it up from there
 		if (!outAssignp) {
@@ -1165,7 +1178,7 @@ class TristateVisitor : public TristateBaseVisitor {
 
 	    // Propagate any pullups/pulldowns upwards if necessary
 	    if (exprrefp) {
-		if (AstPull* pullp = (AstPull*) nodep->modVarp()->user3p()) {
+                if (AstPull* pullp = static_cast<AstPull*>(nodep->modVarp()->user3p())) {
 		    UINFO(9, "propagate pull on "<<exprrefp<<endl);
 		    setPullDirection(exprrefp->varp(), pullp);
 		}
@@ -1220,7 +1233,7 @@ class TristateVisitor : public TristateBaseVisitor {
     }
 
     virtual void visit(AstVar* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	UINFO(9,dbgState()<<nodep<<endl);
 	if (m_graphing) {
 	    // If tri0/1 force a pullup
@@ -1234,11 +1247,12 @@ class TristateVisitor : public TristateBaseVisitor {
 		nodep->addNextHere(newp);
 		// We'll iterate on the new AstPull later
 	    }
-	    if (nodep->isInout()
-		//|| varp->isOutput()
-		// Note unconnected output only changes behavior vs. previous versions and causes outputs
-		// that don't come from anywhere to possibly create connection errors.
-		// One example of problems is this:  "output z;  task t; z <= {something}; endtask"
+            if (nodep->isInoutish()
+                //|| varp->isOutput()
+                // Note unconnected output only changes behavior vs. previous
+                // versions and causes outputs that don't come from anywhere to
+                // possibly create connection errors.
+                // One example of problems is this:  "output z;  task t; z <= {something}; endtask"
 		) {
 		UINFO(9,"  setTristate-inout "<<nodep<<endl);
 		m_tgraph.setTristate(nodep);
@@ -1263,13 +1277,13 @@ class TristateVisitor : public TristateBaseVisitor {
 	// Walk the graph, finding all variables and tristate constructs
 	{
 	    m_graphing = true;
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    m_graphing = false;
 	}
 	// Use graph to find tristate signals
 	m_tgraph.graphWalk(nodep);
 	// Build the LHS drivers map for this module
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	// Insert new logic for all tristates
 	insertTristates(nodep);
 	m_modp = NULL;
@@ -1281,23 +1295,23 @@ class TristateVisitor : public TristateBaseVisitor {
 
     virtual void visit(AstCaseItem* nodep) {
 	// don't deal with casez compare '???? values
-	nodep->bodysp()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->bodysp());
     }
 
     virtual void visit(AstCell* nodep) {
 	m_cellp = nodep;
 	m_alhs = false;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_cellp = NULL;
     }
 
     virtual void visit(AstNetlist* nodep) {
-	nodep->iterateChildrenBackwards(*this);
+        iterateChildrenBackwards(nodep);
     }
 
     // Default: Just iterate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkUnhandled(nodep);
     }
 
@@ -1311,7 +1325,7 @@ public:
 	m_alhs = false;
 	m_logicp = NULL;
 	m_tgraph.clear();
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~TristateVisitor() {
 	V3Stats::addStat("Tristate, Tristate resolved nets", m_statTriSigs);
@@ -1323,6 +1337,8 @@ public:
 
 void V3Tristate::tristateAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    TristateVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("tristate.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        TristateVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("tristate", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

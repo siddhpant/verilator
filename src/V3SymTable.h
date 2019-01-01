@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,16 +23,15 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <map>
-#include <iomanip>
-#include <memory>
 
 #include "V3Global.h"
 #include "V3Ast.h"
 #include "V3File.h"
+
+#include <cstdarg>
+#include <map>
+#include <iomanip>
+#include <memory>
 
 class VSymGraph;
 class VSymEnt;
@@ -40,7 +39,8 @@ class VSymEnt;
 //######################################################################
 // Symbol table
 
-typedef set<VSymEnt*> VSymMap;
+typedef std::set<VSymEnt*> VSymMap;
+typedef std::set<const VSymEnt*> VSymConstMap;
 
 class VSymEnt {
     // Symbol table that can have a "superior" table for resolving upper references
@@ -65,10 +65,12 @@ private:
     static inline int debug() { return 0; }  // NOT runtime, too hot of a function
 #endif
 public:
-    void dumpIterate(ostream& os, VSymMap& doneSymsr, const string& indent, int numLevels, const string& searchName) {
-	os<<indent<<"+ "<<left<<setw(30)<<(searchName==""?"\"\"":searchName)<<setw(0)<<right;
-	os<<"  se"<<(void*)(this)<<setw(0);
-	os<<"  fallb=se"<<(void*)(m_fallbackp);
+    void dumpIterate(std::ostream& os, VSymConstMap& doneSymsr, const string& indent,
+                     int numLevels, const string& searchName) const {
+        os<<indent<<"+ "<<std::left<<std::setw(30)<<(searchName==""?"\"\"":searchName)<<std::setw(0)<<std::right;
+        os<<"  se"<<cvtToHex(this)<<std::setw(0);
+        os<<"  fallb=se"<<cvtToHex(m_fallbackp);
+        if (m_symPrefix!="") os<<"  symPrefix="<<m_symPrefix;
 	os<<"  n="<<nodep();
 	os<<endl;
 	if (doneSymsr.find(this) != doneSymsr.end()) {
@@ -82,8 +84,8 @@ public:
 	    }
 	}
     }
-    void dump(ostream& os, const string& indent="", int numLevels=1) {
-	VSymMap doneSyms;
+    void dump(std::ostream& os, const string& indent="", int numLevels=1) const {
+	VSymConstMap doneSyms;
 	dumpIterate(os, doneSyms, indent, numLevels, "TOP");
     }
 
@@ -115,7 +117,8 @@ public:
     bool imported() const { return m_imported; }
     void imported(bool flag) { m_imported = flag; }
     void insert(const string& name, VSymEnt* entp) {
-	UINFO(9, "     SymInsert se"<<(void*)this<<" '"<<name<<"' se"<<(void*)entp<<"  "<<entp->nodep()<<endl);
+        UINFO(9, "     SymInsert se"<<cvtToHex(this)
+              <<" '"<<name<<"' se"<<cvtToHex(entp)<<"  "<<entp->nodep()<<endl);
 	if (name != "" && m_idNameMap.find(name) != m_idNameMap.end()) {
 	    if (!V3Error::errorCount()) {   // Else may have just reported warning
 		if (debug()>=9 || V3Error::debugDefault()) dump(cout,"- err-dump: ", 1);
@@ -128,7 +131,8 @@ public:
     void reinsert(const string& name, VSymEnt* entp) {
 	IdNameMap::iterator it = m_idNameMap.find(name);
 	if (name!="" && it != m_idNameMap.end()) {
-	    UINFO(9, "     SymReinsert se"<<(void*)this<<" '"<<name<<"' se"<<(void*)entp<<"  "<<entp->nodep()<<endl);
+            UINFO(9, "     SymReinsert se"<<cvtToHex(this)
+                  <<" '"<<name<<"' se"<<cvtToHex(entp)<<"  "<<entp->nodep()<<endl);
 	    it->second = entp;  // Replace
 	} else {
 	    insert(name,entp);
@@ -138,9 +142,9 @@ public:
 	// Find identifier without looking upward through symbol hierarchy
 	// First, scan this begin/end block or module for the name
 	IdNameMap::const_iterator it = m_idNameMap.find(name);
-	UINFO(9, "     SymFind   se"<<(void*)this<<" '"<<name
+        UINFO(9, "     SymFind   se"<<cvtToHex(this)<<" '"<<name
 	      <<"' -> "<<(it == m_idNameMap.end() ? "NONE"
-			  : "se"+cvtToStr((void*)(it->second))+" n="+cvtToStr((void*)(it->second->nodep())))<<endl);
+                          : "se"+cvtToHex(it->second)+" n="+cvtToHex(it->second->nodep()))<<endl);
 	if (it != m_idNameMap.end()) return (it->second);
 	return NULL;
     }
@@ -153,43 +157,63 @@ public:
 	return NULL;
     }
 private:
-    bool importOneSymbol(VSymGraph* graphp, const string& name, const VSymEnt* srcp) {
+    void importOneSymbol(VSymGraph* graphp, const string& name, const VSymEnt* srcp) {
 	if (srcp->exported()
 	    && !findIdFlat(name)) {  // Don't insert over existing entry
 	    VSymEnt* symp = new VSymEnt(graphp, srcp);
 	    symp->exported(false);  // Can't reimport an import without an export
 	    symp->imported(true);
 	    reinsert(name, symp);
-	    return true;
-	} else {
-	    return false;
+	}
+    }
+    void exportOneSymbol(VSymGraph* graphp, const string& name, const VSymEnt* srcp) {
+	if (srcp->exported()) {
+	    if (VSymEnt* symp = findIdFlat(name)) {  // Should already exist in current table
+		if (!symp->exported()) symp->exported(true);
+	    }
 	}
     }
 public:
-    bool importFromPackage(VSymGraph* graphp, const VSymEnt* srcp, const string& id_or_star) {
+    void importFromPackage(VSymGraph* graphp, const VSymEnt* srcp, const string& id_or_star) {
 	// Import tokens from source symbol table into this symbol table
-	// Returns true if successful
-	bool any = false;
 	if (id_or_star != "*") {
 	    IdNameMap::const_iterator it = srcp->m_idNameMap.find(id_or_star);
-	    if (it != m_idNameMap.end()) {
+	    if (it != srcp->m_idNameMap.end()) {
 		importOneSymbol(graphp, it->first, it->second);
 	    }
-	    any = true;  // Legal, though perhaps lint questionable to import nothing
 	} else {
 	    for (IdNameMap::const_iterator it=srcp->m_idNameMap.begin(); it!=srcp->m_idNameMap.end(); ++it) {
-		if (importOneSymbol(graphp, it->first, it->second)) any = true;
+		importOneSymbol(graphp, it->first, it->second);
 	    }
 	}
-	return any;
+    }
+    void exportFromPackage(VSymGraph* graphp, const VSymEnt* srcp, const string& id_or_star) {
+	// Export tokens from source symbol table into this symbol table
+	if (id_or_star != "*") {
+	    IdNameMap::const_iterator it = srcp->m_idNameMap.find(id_or_star);
+	    if (it != srcp->m_idNameMap.end()) {
+		exportOneSymbol(graphp, it->first, it->second);
+	    }
+	} else {
+	    for (IdNameMap::const_iterator it=srcp->m_idNameMap.begin(); it!=srcp->m_idNameMap.end(); ++it) {
+		exportOneSymbol(graphp, it->first, it->second);
+	    }
+	}
+    }
+    void exportStarStar(VSymGraph* graphp) {
+	// Export *:*: Export all tokens from imported packages
+	for (IdNameMap::const_iterator it=m_idNameMap.begin(); it!=m_idNameMap.end(); ++it) {
+	    VSymEnt* symp = it->second;
+	    if (!symp->exported()) symp->exported(true);
+	}
     }
     void importFromIface(VSymGraph* graphp, const VSymEnt* srcp, bool onlyUnmodportable = false) {
 	// Import interface tokens from source symbol table into this symbol table, recursively
-	UINFO(9, "     importIf  se"<<(void*)this<<" from se"<<(void*)srcp<<endl);
+        UINFO(9, "     importIf  se"<<cvtToHex(this)<<" from se"<<cvtToHex(srcp)<<endl);
 	for (IdNameMap::const_iterator it=srcp->m_idNameMap.begin(); it!=srcp->m_idNameMap.end(); ++it) {
 	    const string& name = it->first;
 	    VSymEnt* subSrcp = it->second;
-	    AstVar* varp = subSrcp->nodep()->castVar();
+            const AstVar* varp = VN_CAST(subSrcp->nodep(), Var);
 	    if (!onlyUnmodportable || (varp && varp->varType() == AstVarType::GPARAM)) {
 		VSymEnt* subSymp = new VSymEnt(graphp, subSrcp);
 		reinsert(name, subSymp);
@@ -203,16 +227,16 @@ public:
 	string scopes;
 	for (IdNameMap::iterator it = m_idNameMap.begin(); it!=m_idNameMap.end(); ++it) {
 	    AstNode* nodep = it->second->nodep();
-	    if (nodep->castCell()
-		|| (nodep->castModule() && nodep->castModule()->isTop())) {
+            if (VN_IS(nodep, Cell)
+                || (VN_IS(nodep, Module) && VN_CAST(nodep, Module)->isTop())) {
 		if (scopes != "") scopes += ", ";
 		scopes += AstNode::prettyName(it->first);
 	    }
 	}
 	if (scopes=="") scopes="<no cells found>";
-	cerr<<V3Error::msgPrefix()<<"     Known scopes under '"<<prettyName<<"': "
-	    <<scopes<<endl;
-	if (debug()) dump(cerr,"\t\t      KnownScope: ", 1);
+        std::cerr<<V3Error::msgPrefix()<<"     Known scopes under '"<<prettyName<<"': "
+                 <<scopes<<endl;
+        if (debug()) dump(std::cerr,"\t\t      KnownScope: ", 1);
     }
 };
 
@@ -222,24 +246,30 @@ public:
 class VSymGraph {
     // Collection of symbol tables
     // TYPES
-    typedef vector<VSymEnt*>	SymStack;
+    typedef std::vector<VSymEnt*> SymStack;
 
-private:
     // MEMBERS
     VSymEnt*	m_symRootp;		// Root symbol table
     SymStack	m_symsp;		// All symbol tables, to cleanup
 
-    VSymGraph(const VSymGraph&);	///< N/A, no copy constructor
-
-protected:
-    friend class VSymEnt;
-    void pushNewEnt(VSymEnt* entp) { m_symsp.push_back(entp); }
+    // CONSTRUCTORS
+    VL_UNCOPYABLE(VSymGraph);
+public:
+    explicit VSymGraph(AstNetlist* nodep) {
+	m_symRootp = new VSymEnt(this, nodep);
+    }
+    ~VSymGraph() {
+	for (SymStack::iterator it = m_symsp.begin(); it != m_symsp.end(); ++it) {
+	    delete (*it);
+	}
+    }
 
 public:
+    // METHODS
     VSymEnt* rootp() const { return m_symRootp; }
     // Debug
-    void dump(ostream& os, const string& indent="") {
-	VSymMap doneSyms;
+    void dump(std::ostream& os, const string& indent="") {
+	VSymConstMap doneSyms;
 	os<<"SymEnt Dump:\n";
 	m_symRootp->dumpIterate(os, doneSyms, indent, 9999, "$root");
 	bool first = true;
@@ -254,21 +284,15 @@ public:
 	if (v3Global.opt.dumpTree()) {
 	    string filename = v3Global.debugFilename(nameComment)+".txt";
 	    UINFO(2,"Dumping "<<filename<<endl);
-	    const VL_UNIQUE_PTR<ofstream> logp (V3File::new_ofstream(filename));
-	    if (logp->fail()) v3fatalSrc("Can't write "<<filename);
+            const vl_unique_ptr<std::ofstream> logp (V3File::new_ofstream(filename));
+            if (logp->fail()) v3fatal("Can't write "<<filename);
 	    dump(*logp, "");
 	}
     }
-public:
-    // CREATORS
-    explicit VSymGraph(AstNetlist* nodep) {
-	m_symRootp = new VSymEnt(this, nodep);
-    }
-    ~VSymGraph() {
-	for (SymStack::iterator it = m_symsp.begin(); it != m_symsp.end(); ++it) {
-	    delete (*it);
-	}
-    }
+
+protected:
+    friend class VSymEnt;
+    void pushNewEnt(VSymEnt* entp) { m_symsp.push_back(entp); }
 };
 
 //######################################################################

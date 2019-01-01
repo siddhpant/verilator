@@ -7,21 +7,16 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-compile (
-	 );
+scenarios(simulator => 1);
 
-execute (
-	 check_finished=>1,
-	 expect=>quotemeta(dequote(
-'To stdout
-To stderr
-*-* All Finished *-*
-')),
-     );
+compile(
+    );
+
+execute(
+    check_finished => 1,
+    expect_filename => $Self->{golden_filename},
+    );
 
 ok(1);
-
-# Don't put control chars into our source repository, pre-compress instead
-sub dequote { my $s = shift; $s =~ s/<#013>/\r/g; $s; }
 
 1;

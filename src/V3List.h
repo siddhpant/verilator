@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,8 +20,10 @@
 
 #ifndef _V3LIST_H_
 #define _V3LIST_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include <vector>
 
 //============================================================================
@@ -76,7 +78,7 @@ public:
     }
     T nextp() const { return m_nextp; }
     // METHODS
-    void pushBack (V3List<T>& listr, T newp) {
+    void pushBack(V3List<T>& listr, T newp) {
 	// "this" must be a element inside of *newp
 	// cppcheck-suppress thisSubtraction
 	size_t offset = (size_t)(vluint8_t*)(this) - (size_t)(vluint8_t*)(newp);
@@ -86,7 +88,7 @@ public:
 	if (m_prevp) baseToListEnt(m_prevp,offset)->m_nextp = newp;
 	listr.m_tailp = newp;
     }
-    void pushFront (V3List<T>& listr, T newp) {
+    void pushFront(V3List<T>& listr, T newp) {
 	// "this" must be a element inside of *newp
 	// cppcheck-suppress thisSubtraction
 	size_t offset = (size_t)(vluint8_t*)(this) - (size_t)(vluint8_t*)(newp);
@@ -97,7 +99,7 @@ public:
 	if (!listr.m_tailp) listr.m_tailp = newp;
     }
     // Unlink from side
-    void unlink (V3List<T>& listr, T oldp) {
+    void unlink(V3List<T>& listr, T oldp) {
 	// "this" must be a element inside of *oldp
 	// cppcheck-suppress thisSubtraction
 	size_t offset = (size_t)(vluint8_t*)(this) - (size_t)(vluint8_t*)(oldp);

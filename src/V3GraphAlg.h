@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,6 +20,7 @@
 
 #ifndef _V3GRAPHALG_H_
 #define _V3GRAPHALG_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
 
@@ -30,17 +31,19 @@
 // Algorithms - common class
 // For internal use, most graph algorithms use this as a base class
 
+template <class T_Graph = V3Graph>  // Or sometimes const V3Graph
 class GraphAlg {
 protected:
-    V3Graph*	m_graphp;		// Graph we're operating upon
-    V3EdgeFuncP	m_edgeFuncp;		// Function that says we follow this edge
-
-    inline bool followEdge(V3GraphEdge* edgep) {
-	return (edgep->weight() && (m_edgeFuncp)(edgep));
-    }
-    GraphAlg(V3Graph* graphp, V3EdgeFuncP edgeFuncp)
-	: m_graphp(graphp), m_edgeFuncp(edgeFuncp) {}
+    T_Graph* m_graphp;  // Graph we're operating upon
+    V3EdgeFuncP m_edgeFuncp;  // Function that says we follow this edge
+    // CONSTRUCTORS
+    GraphAlg(T_Graph* graphp, V3EdgeFuncP edgeFuncp)
+        : m_graphp(graphp), m_edgeFuncp(edgeFuncp) {}
     ~GraphAlg() {}
+    // METHODS
+    inline bool followEdge(V3GraphEdge* edgep) {
+        return (edgep->weight() && (m_edgeFuncp)(edgep));
+    }
 };
 
 //============================================================================

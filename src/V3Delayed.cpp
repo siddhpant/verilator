@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -53,17 +53,16 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <map>
-#include <deque>
 
 #include "V3Global.h"
 #include "V3Delayed.h"
 #include "V3Ast.h"
 #include "V3Stats.h"
+
+#include <algorithm>
+#include <cstdarg>
+#include <deque>
+#include <map>
 
 //######################################################################
 // Delayed state, as a visitor of each AstNode
@@ -77,7 +76,6 @@ private:
     //  AstVarScope::user4p()	-> AstAlwaysPost*.  Post block for this variable
     //  AstVarScope::user5()	-> VarUsage. Tracks delayed vs non-delayed usage
     //  AstVar::user2()		-> bool.  Set true if already made warning
-    //  AstVar::user4()		-> int.   Vector number, for assignment creation
     //  AstVarRef::user2()	-> bool.  Set true if already processed
     //  AstAlwaysPost::user2()	-> ActActive*.  Points to activity block of signal (valid when AstAlwaysPost::user4p is valid)
     //  AstAlwaysPost::user4()	-> AstIf*.  Last IF (__Vdlyvset__) created under this AlwaysPost
@@ -99,26 +97,25 @@ private:
     bool		m_inDly;	// True in delayed assignments
     bool		m_inLoop;	// True in for loops
     bool		m_inInitial;	// True in intial blocks
-    typedef std::map<pair<AstNodeModule*,string>,AstVar*> VarMap;
+    typedef std::map<std::pair<AstNodeModule*,string>,AstVar*> VarMap;
     VarMap		m_modVarMap;	// Table of new var names created under module
     V3Double0		m_statSharedSet;// Statistic tracking
-
+    typedef std::map<AstVarScope*,int> ScopeVecMap;
+    ScopeVecMap m_scopeVecMap; // Next var number for each scope
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void markVarUsage(AstVarScope* nodep, uint32_t flags) {
 	//UINFO(4," MVU "<<flags<<" "<<nodep<<endl);
 	nodep->user5( nodep->user5() | flags );
 	if ((nodep->user5() & VU_DLY) && (nodep->user5() & VU_NONDLY)) {
-	    nodep->v3warn(BLKANDNBLK,"Unsupported: Blocked and non-blocking assignments to same variable: "<<nodep->varp()->prettyName());
+            nodep->v3warn(BLKANDNBLK,"Unsupported: Blocked and non-blocking assignments to same variable: "
+                          <<nodep->varp()->prettyName());
 	}
     }
-    AstVarScope* createVarSc(AstVarScope* oldvarscp, string name, int width/*0==fromoldvar*/, AstNodeDType* newdtypep) {
+    AstVarScope* createVarSc(AstVarScope* oldvarscp, const string& name,
+                             int width/*0==fromoldvar*/, AstNodeDType* newdtypep) {
 	// Because we've already scoped it, we may need to add both the AstVar and the AstVarScope
 	if (!oldvarscp->scopep()) oldvarscp->v3fatalSrc("Var unscoped");
 	AstVar* varp;
@@ -130,26 +127,27 @@ private:
 	    varp = it->second;
 	} else {
 	    if (newdtypep) {
-		varp = new AstVar (oldvarscp->fileline(), AstVarType::BLOCKTEMP, name, newdtypep);
+                varp = new AstVar(oldvarscp->fileline(), AstVarType::BLOCKTEMP, name, newdtypep);
 	    } else if (width==0) {
-		varp = new AstVar (oldvarscp->fileline(), AstVarType::BLOCKTEMP, name, oldvarscp->varp());
+                varp = new AstVar(oldvarscp->fileline(), AstVarType::BLOCKTEMP, name, oldvarscp->varp());
 		varp->dtypeFrom(oldvarscp);
 	    } else { // Used for vset and dimensions, so can zero init
-		varp = new AstVar (oldvarscp->fileline(), AstVarType::BLOCKTEMP, name, VFlagBitPacked(), width);
+                varp = new AstVar(oldvarscp->fileline(), AstVarType::BLOCKTEMP, name, VFlagBitPacked(), width);
 	    }
 	    addmodp->addStmtp(varp);
 	    m_modVarMap.insert(make_pair(make_pair(addmodp, name), varp));
 	}
 
-	AstVarScope* varscp = new AstVarScope (oldvarscp->fileline(), oldvarscp->scopep(), varp);
+        AstVarScope* varscp = new AstVarScope(oldvarscp->fileline(), oldvarscp->scopep(), varp);
 	oldvarscp->scopep()->addVarp(varscp);
 	return varscp;
     }
 
     AstActive* createActivePost(AstVarRef* varrefp) {
-	AstActive* newactp = new AstActive (varrefp->fileline(), "sequentdly",
-					    m_activep->sensesp());
-	m_activep->addNext(newactp);
+        AstActive* newactp = new AstActive(varrefp->fileline(), "sequentdly",
+                                           m_activep->sensesp());
+        // Was addNext(), but addNextHere() avoids a linear search.
+        m_activep->addNextHere(newactp);
 	return newactp;
     }
     void checkActivePost(AstVarRef* varrefp, AstActive* oldactivep) {
@@ -158,7 +156,8 @@ private:
 	if (oldactivep->sensesp() != m_activep->sensesp()) {
 	    if (!varrefp->varp()->fileline()->warnIsOff(V3ErrorCode::MULTIDRIVEN)
 		&& !varrefp->varp()->user2()) {
-		varrefp->varp()->v3warn(MULTIDRIVEN,"Signal has multiple driving blocks: "<<varrefp->varp()->prettyName()<<endl
+                varrefp->varp()->v3warn(MULTIDRIVEN,"Signal has multiple driving blocks with different clocking: "
+                                        <<varrefp->varp()->prettyName()<<endl
 					<<varrefp->warnMore()<<"... Location of first driving block"<<endl
 					<<oldactivep->warnMore()<<"... Location of other driving block");
 		varrefp->varp()->user2(true);
@@ -188,44 +187,45 @@ private:
 	AstNode* newlhsp = NULL;	// NULL = unlink old assign
 	AstSel*  bitselp = NULL;
 	AstArraySel*  arrayselp = NULL;
-	if (lhsp->castSel()) {
-	    bitselp = lhsp->castSel();
-	    arrayselp = bitselp->fromp()->castArraySel();
+        if (VN_IS(lhsp, Sel)) {
+            bitselp = VN_CAST(lhsp, Sel);
+            arrayselp = VN_CAST(bitselp->fromp(), ArraySel);
 	} else {
-	    arrayselp = lhsp->castArraySel();
+            arrayselp = VN_CAST(lhsp, ArraySel);
 	}
 	if (!arrayselp) nodep->v3fatalSrc("No arraysel under bitsel?");
-	if (arrayselp->length()!=1) nodep->v3fatalSrc("ArraySel with length!=1 should have been removed in V3Slice");
-
+        if (VN_IS(arrayselp->dtypep()->skipRefp(), UnpackArrayDType)) {
+            nodep->v3fatalSrc("ArraySel with unpacked arrays should have been removed in V3Slice");
+        }
 	UINFO(4,"AssignDlyArray: "<<nodep<<endl);
 	//
 	//=== Dimensions: __Vdlyvdim__
-	deque<AstNode*> dimvalp;		// Assignment value for each dimension of assignment
+        std::deque<AstNode*> dimvalp;           // Assignment value for each dimension of assignment
 	AstNode* dimselp=arrayselp;
-	for (; dimselp->castArraySel(); dimselp=dimselp->castArraySel()->fromp()) {
-	    AstNode* valp = dimselp->castArraySel()->bitp()->unlinkFrBack();
+        for (; VN_IS(dimselp, ArraySel); dimselp=VN_CAST(dimselp, ArraySel)->fromp()) {
+            AstNode* valp = VN_CAST(dimselp, ArraySel)->bitp()->unlinkFrBack();
 	    dimvalp.push_front(valp);
 	}
-	AstVarRef* varrefp = dimselp->castVarRef();
+        AstVarRef* varrefp = VN_CAST(dimselp, VarRef);
 	if (!varrefp) nodep->v3fatalSrc("No var underneath arraysels");
 	if (!varrefp->varScopep()) varrefp->v3fatalSrc("Var didn't get varscoped in V3Scope.cpp");
 	varrefp->unlinkFrBack();
 	AstVar* oldvarp = varrefp->varp();
-	int modVecNum = oldvarp->user4();  oldvarp->user4(modVecNum+1);
+	int modVecNum = m_scopeVecMap[varrefp->varScopep()]++;
 	//
-	deque<AstNode*> dimreadps;		// Read value for each dimension of assignment
+        std::deque<AstNode*> dimreadps;         // Read value for each dimension of assignment
 	for (unsigned dimension=0; dimension<dimvalp.size(); dimension++) {
 	    AstNode* dimp = dimvalp[dimension];
-	    if (dimp->castConst()) { // bit = const, can just use it
+            if (VN_IS(dimp, Const)) {  // bit = const, can just use it
 		dimreadps.push_front(dimp);
 	    } else {
 		string bitvarname = (string("__Vdlyvdim")+cvtToStr(dimension)
 				     +"__"+oldvarp->shortName()+"__v"+cvtToStr(modVecNum));
 		AstVarScope* bitvscp = createVarSc(varrefp->varScopep(), bitvarname, dimp->width(), NULL);
 		AstAssign* bitassignp
-		    = new AstAssign (nodep->fileline(),
-				     new AstVarRef(nodep->fileline(), bitvscp, true),
-				     dimp);
+                    = new AstAssign(nodep->fileline(),
+                                    new AstVarRef(nodep->fileline(), bitvscp, true),
+                                    dimp);
 		nodep->addNextHere(bitassignp);
 		dimreadps.push_front(new AstVarRef(nodep->fileline(), bitvscp, false));
 	    }
@@ -235,14 +235,14 @@ private:
 	AstNode* bitreadp=NULL;  // Code to read Vdlyvlsb
 	if (bitselp) {
 	    AstNode* lsbvaluep = bitselp->lsbp()->unlinkFrBack();
-	    if (bitselp->fromp()->castConst()) {// vlsb = constant, can just push constant into where we use it
+            if (VN_IS(bitselp->fromp(), Const)) {  // vlsb = constant, can just push constant into where we use it
 		bitreadp = lsbvaluep;
 	    } else {
 		string bitvarname = (string("__Vdlyvlsb__")+oldvarp->shortName()+"__v"+cvtToStr(modVecNum));
 		AstVarScope* bitvscp = createVarSc(varrefp->varScopep(), bitvarname, lsbvaluep->width(), NULL);
-		AstAssign* bitassignp = new AstAssign (nodep->fileline(),
-						       new AstVarRef(nodep->fileline(), bitvscp, true),
-						       lsbvaluep);
+                AstAssign* bitassignp = new AstAssign(nodep->fileline(),
+                                                      new AstVarRef(nodep->fileline(), bitvscp, true),
+                                                      lsbvaluep);
 		nodep->addNextHere(bitassignp);
 		bitreadp = new AstVarRef(nodep->fileline(), bitvscp, false);
 	    }
@@ -250,7 +250,7 @@ private:
 	//
 	//=== Value: __Vdlyvval__
 	AstNode* valreadp;	// Code to read Vdlyvval
-	if (nodep->rhsp()->castConst()) {	// vval = constant, can just push constant into where we use it
+        if (VN_IS(nodep->rhsp(), Const)) {  // vval = constant, can just push constant into where we use it
 	    valreadp = nodep->rhsp()->unlinkFrBack();
 	} else {
 	    string valvarname = (string("__Vdlyvval__")+oldvarp->shortName()+"__v"+cvtToStr(modVecNum));
@@ -268,19 +268,19 @@ private:
 	    // then we told this nodep->user3 we can use its Vdlyvset rather than making a new one.
 	    // This is good for code like:
 	    //    for (i=0; i<5; i++)  vector[i] <= something;
-	    setvscp = nodep->user3p()->castVarScope();
+            setvscp = VN_CAST(nodep->user3p(), VarScope);
 	    ++m_statSharedSet;
 	} else {  // Create new one
 	    string setvarname = (string("__Vdlyvset__")+oldvarp->shortName()+"__v"+cvtToStr(modVecNum));
 	    setvscp = createVarSc(varrefp->varScopep(), setvarname, 1, NULL);
-	    setinitp = new AstAssignPre (nodep->fileline(),
-					 new AstVarRef(nodep->fileline(), setvscp, true),
-					 new AstConst(nodep->fileline(), 0));
+            setinitp = new AstAssignPre(nodep->fileline(),
+                                        new AstVarRef(nodep->fileline(), setvscp, true),
+                                        new AstConst(nodep->fileline(), 0));
 	    AstAssign* setassignp
-		= new AstAssign (nodep->fileline(),
-				 new AstVarRef(nodep->fileline(), setvscp, true),
-				 new AstConst(nodep->fileline(),
-					      V3Number(nodep->fileline(),1,true)));
+                = new AstAssign(nodep->fileline(),
+                                new AstVarRef(nodep->fileline(), setvscp, true),
+                                new AstConst(nodep->fileline(),
+                                             V3Number(nodep->fileline(),1,true)));
 	    nodep->addNextHere(setassignp);
 	}
 	if (m_nextDlyp) {  // Tell next assigndly it can share the variable
@@ -289,7 +289,7 @@ private:
 	//
 	// Create ALWAYSPOST for delayed variable
 	// We add all logic to the same block if it's for the same memory
-	// This insures that multiple assignments to the same memory will result
+	// This ensures that multiple assignments to the same memory will result
 	// in correctly ordered code - the last assignment must be last.
 	// It also has the nice side effect of assisting cache locality.
 	AstNode* selectsp = varrefp;
@@ -303,9 +303,9 @@ private:
 	// Build "IF (changeit) ...
 	UINFO(9,"   For "<<setvscp<<endl);
 	UINFO(9,"     & "<<varrefp<<endl);
-	AstAlwaysPost* finalp = varrefp->varScopep()->user4p()->castAlwaysPost();
+        AstAlwaysPost* finalp = VN_CAST(varrefp->varScopep()->user4p(), AlwaysPost);
 	if (finalp) {
-	    AstActive* oldactivep = finalp->user2p()->castActive();
+            AstActive* oldactivep = VN_CAST(finalp->user2p(), Active);
 	    checkActivePost(varrefp, oldactivep);
 	    if (setinitp) oldactivep->addStmtsp(setinitp);
 	} else { // first time we've dealt with this memory
@@ -321,13 +321,12 @@ private:
 	if (finalp->user3p() == setvscp) {
 	    // Optimize as above; if sharing Vdlyvset *ON SAME VARIABLE*,
 	    // we can share the IF statement too
-	    postLogicp = finalp->user4p()->castIf();
+            postLogicp = VN_CAST(finalp->user4p(), If);
 	    if (!postLogicp) nodep->v3fatalSrc("Delayed assignment misoptimized; prev var found w/o associated IF");
 	} else {
-	    postLogicp = new AstIf (nodep->fileline(),
-				    new AstVarRef(nodep->fileline(), setvscp, false),
-				    NULL,
-				    NULL);
+            postLogicp = new AstIf(nodep->fileline(),
+                                   new AstVarRef(nodep->fileline(), setvscp, false),
+                                   NULL, NULL);
 	    UINFO(9,"     Created "<<postLogicp<<endl);
 	    finalp->addBodysp(postLogicp);
 	    finalp->user3p(setvscp);	// Remember IF's vset variable
@@ -341,16 +340,16 @@ private:
     virtual void visit(AstNetlist* nodep) {
 	//VV*****  We reset all userp() on the netlist
 	m_modVarMap.clear();
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstScope* nodep) {
 	UINFO(4," MOD   "<<nodep<<endl);
 	AstNode::user3ClearTree();
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstCFunc* nodep) {
 	m_cfuncp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_cfuncp = NULL;
     }
     virtual void visit(AstActive* nodep) {
@@ -358,19 +357,19 @@ private:
 	bool oldinit = m_inInitial;
 	m_inInitial = nodep->hasInitial();
 	AstNode::user3ClearTree();  // Two sets to same variable in different actives must use different vars.
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_inInitial = oldinit;
     }
     virtual void visit(AstAssignDly* nodep) {
 	m_inDly = true;
-	m_nextDlyp = nodep->nextp()->castAssignDly();  // Next assignment in same block, maybe NULL.
+        m_nextDlyp = VN_CAST(nodep->nextp(), AssignDly);  // Next assignment in same block, maybe NULL.
 	if (m_cfuncp) nodep->v3error("Unsupported: Delayed assignment inside public function/task");
-	if (nodep->lhsp()->castArraySel()
-	    || (nodep->lhsp()->castSel()
-		&& nodep->lhsp()->castSel()->fromp()->castArraySel())) {
+        if (VN_IS(nodep->lhsp(), ArraySel)
+            || (VN_IS(nodep->lhsp(), Sel)
+                && VN_IS(VN_CAST(nodep->lhsp(), Sel)->fromp(), ArraySel))) {
 	    AstNode* lhsp = nodep->lhsp()->unlinkFrBack();
 	    AstNode* newlhsp = createDlyArray(nodep, lhsp);
-	    if (m_inLoop) nodep->v3warn(E_BLKLOOPINIT,"Unsupported: Delayed assignment to array inside for loops (non-delayed is ok - see docs)");
+	    if (m_inLoop) nodep->v3warn(BLKLOOPINIT,"Unsupported: Delayed assignment to array inside for loops (non-delayed is ok - see docs)");
 	    if (newlhsp) {
 		nodep->lhsp(newlhsp);
 	    } else {
@@ -379,7 +378,7 @@ private:
 	    lhsp->deleteTree(); VL_DANGLING(lhsp);
 	}
 	else {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
 	m_inDly = false;
 	m_nextDlyp = NULL;
@@ -391,25 +390,27 @@ private:
 		UINFO(4,"AssignDlyVar: "<<nodep<<endl);
 		markVarUsage(nodep->varScopep(), VU_DLY);
 		if (!m_activep) nodep->v3fatalSrc("<= not under sensitivity block");
-		if (!m_activep->hasClocked()) nodep->v3error("Internal: Blocking <= assignment in non-clocked block, should have converted in V3Active");
+                if (!m_activep->hasClocked()) {
+                    nodep->v3error("Internal: Blocking <= assignment in non-clocked block, should have converted in V3Active");
+                }
 		AstVarScope* oldvscp = nodep->varScopep();
 		if (!oldvscp) nodep->v3fatalSrc("Var didn't get varscoped in V3Scope.cpp");
-		AstVarScope* dlyvscp = oldvscp->user1p()->castVarScope();
+                AstVarScope* dlyvscp = VN_CAST(oldvscp->user1p(), VarScope);
 		if (dlyvscp) {  // Multiple use of delayed variable
-		    AstActive* oldactivep = dlyvscp->user2p()->castActive();
+                    AstActive* oldactivep = VN_CAST(dlyvscp->user2p(), Active);
 		    checkActivePost(nodep, oldactivep);
 		}
 		if (!dlyvscp) {  // First use of this delayed variable
 		    string newvarname = (string("__Vdly__")+nodep->varp()->shortName());
 		    dlyvscp = createVarSc(oldvscp, newvarname, 0, NULL);
 		    AstNodeAssign* prep
-			= new AstAssignPre (nodep->fileline(),
-					    new AstVarRef(nodep->fileline(), dlyvscp, true),
-					    new AstVarRef(nodep->fileline(), oldvscp, false));
+                        = new AstAssignPre(nodep->fileline(),
+                                           new AstVarRef(nodep->fileline(), dlyvscp, true),
+                                           new AstVarRef(nodep->fileline(), oldvscp, false));
 		    AstNodeAssign* postp
-			= new AstAssignPost (nodep->fileline(),
-					     new AstVarRef(nodep->fileline(), oldvscp, true),
-					     new AstVarRef(nodep->fileline(), dlyvscp, false));
+                        = new AstAssignPost(nodep->fileline(),
+                                            new AstVarRef(nodep->fileline(), oldvscp, true),
+                                            new AstVarRef(nodep->fileline(), dlyvscp, false));
 		    postp->lhsp()->user2(true);	// Don't detect this assignment
 		    oldvscp->user1p(dlyvscp);  // So we can find it later
 		    // Make new ACTIVE with identical sensitivity tree
@@ -438,14 +439,14 @@ private:
     virtual void visit(AstWhile* nodep) {
 	bool oldloop = m_inLoop;
 	m_inLoop = true;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_inLoop = oldloop;
     }
 
     //--------------------
     // Default: Just iterate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -458,7 +459,7 @@ public:
 	m_inLoop = false;
 	m_inInitial = false;
 
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~DelayedVisitor() {
 	V3Stats::addStat("Optimizations, Delayed shared-sets", m_statSharedSet);
@@ -470,6 +471,8 @@ public:
 
 void V3Delayed::delayedAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DelayedVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("delayed.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        DelayedVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("delayed", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

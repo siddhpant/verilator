@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,23 +20,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdarg>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <cerrno>
-#include <fcntl.h>
-#include <iomanip>
-#include <memory>
-#include <map>
-
-#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
-# define INFILTER_PIPE  // Allow pipe filtering.  Needs fork()
-#endif
-
-#ifdef INFILTER_PIPE
-# include <sys/wait.h>
-#endif
 
 #include "V3Global.h"
 #include "V3File.h"
@@ -44,10 +27,35 @@
 #include "V3PreShell.h"
 #include "V3Ast.h"
 
+#include <cerrno>
+#include <cstdarg>
+#include <fcntl.h>
+#include <iomanip>
+#include <map>
+#include <memory>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
+# define INFILTER_PIPE  // Allow pipe filtering.  Needs fork()
+#endif
+
+#ifdef HAVE_STAT_NSEC // i.e. Linux 2.6, from configure
+# define VL_STAT_CTIME_NSEC(stat) ((stat).st_ctim.tv_nsec) // Nanoseconds
+# define VL_STAT_MTIME_NSEC(stat) ((stat).st_mtim.tv_nsec) // Nanoseconds
+#else
+# define VL_STAT_CTIME_NSEC(stat) (0)
+# define VL_STAT_MTIME_NSEC(stat) (0)
+#endif
+
+#ifdef INFILTER_PIPE
+# include <sys/wait.h>
+#endif
+
 // If change this code, run a test with the below size set very small
 //#define INFILTER_IPC_BUFSIZ 16
-#define INFILTER_IPC_BUFSIZ 64*1024  // For debug, try this as a small number
-#define INFILTER_CACHE_MAX  64*1024  // Maximum bytes to cache if same file read twice
+#define INFILTER_IPC_BUFSIZ (64*1024)  // For debug, try this as a small number
+#define INFILTER_CACHE_MAX  (64*1024)  // Maximum bytes to cache if same file read twice
 
 //######################################################################
 // V3File Internal state
@@ -62,6 +70,7 @@ class V3FileDependImp {
     public:
 	DependFile(const string& filename, bool target)
 	    : m_target(target), m_filename(filename) {
+	    m_stat.st_ctime = 0;
 	    m_stat.st_mtime = 0;
 	}
 	~DependFile() {}
@@ -69,7 +78,10 @@ class V3FileDependImp {
 	bool target() const { return m_target; }
 	off_t size() const { return m_stat.st_size; }
 	ino_t ino() const { return m_stat.st_ino; }
-	time_t mtime() const { return m_stat.st_mtime; }
+	time_t cstime() const { return m_stat.st_ctime; } // Seconds
+	time_t cnstime() const { return VL_STAT_CTIME_NSEC(m_stat); } // Nanoseconds
+	time_t mstime() const { return m_stat.st_mtime; } // Seconds
+	time_t mnstime() const { return VL_STAT_MTIME_NSEC(m_stat); } // Nanoseconds
 	void loadStats() {
 	    if (!m_stat.st_mtime) {
 		string fn = filename();
@@ -85,14 +97,14 @@ class V3FileDependImp {
     };
 
     // MEMBERS
-    set<string>		m_filenameSet;		// Files generated (elim duplicates)
-    set<DependFile>	m_filenameList;		// Files sourced/generated
+    std::set<string> m_filenameSet;  // Files generated (elim duplicates)
+    std::set<DependFile> m_filenameList;  // Files sourced/generated
 
     static string stripQuotes(const string& in) {
 	string pretty = in;
 	string::size_type pos;
-	while ((pos=pretty.find("\"")) != string::npos) pretty.replace(pos, 1, "_");
-	while ((pos=pretty.find("\n")) != string::npos) pretty.replace(pos, 1, "_");
+        while ((pos = pretty.find('\"')) != string::npos) pretty.replace(pos, 1, "_");
+        while ((pos = pretty.find('\n')) != string::npos) pretty.replace(pos, 1, "_");
 	return pretty;
     }
 public:
@@ -108,12 +120,12 @@ public:
     void addTgtDepend(const string& filename) {
 	if (m_filenameSet.find(filename) == m_filenameSet.end()) {
 	    m_filenameSet.insert(filename);
-	    m_filenameList.insert(DependFile (filename, true));
+            m_filenameList.insert(DependFile(filename, true));
 	}
     }
     void writeDepend(const string& filename);
-    void writeTimes(const string& filename, const string& cmdline);
-    bool checkTimes(const string& filename, const string& cmdline);
+    void writeTimes(const string& filename, const string& cmdlineIn);
+    bool checkTimes(const string& filename, const string& cmdlineIn);
 };
 
 V3FileDependImp  dependImp;	// Depend implementation class
@@ -122,10 +134,10 @@ V3FileDependImp  dependImp;	// Depend implementation class
 // V3FileDependImp
 
 inline void V3FileDependImp::writeDepend(const string& filename) {
-    const VL_UNIQUE_PTR<ofstream> ofp (V3File::new_ofstream(filename));
-    if (ofp->fail()) v3fatalSrc("Can't write "<<filename);
+    const vl_unique_ptr<std::ofstream> ofp (V3File::new_ofstream(filename));
+    if (ofp->fail()) v3fatal("Can't write "<<filename);
 
-    for (set<DependFile>::iterator iter=m_filenameList.begin();
+    for (std::set<DependFile>::iterator iter=m_filenameList.begin();
 	 iter!=m_filenameList.end(); ++iter) {
 	if (iter->target()) {
 	    *ofp<<iter->filename()<<" ";
@@ -137,7 +149,7 @@ inline void V3FileDependImp::writeDepend(const string& filename) {
     *ofp<<V3PreShell::dependFiles();
     *ofp<<"  ";
 
-    for (set<DependFile>::iterator iter=m_filenameList.begin();
+    for (std::set<DependFile>::iterator iter=m_filenameList.begin();
 	 iter!=m_filenameList.end(); ++iter) {
 	if (!iter->target()) {
 	    *ofp<<iter->filename()<<" ";
@@ -148,7 +160,7 @@ inline void V3FileDependImp::writeDepend(const string& filename) {
 
     if (v3Global.opt.makePhony()) {
 	*ofp<<endl;
-	for (set<DependFile>::iterator iter=m_filenameList.begin();
+        for (std::set<DependFile>::iterator iter=m_filenameList.begin();
 	     iter!=m_filenameList.end(); ++iter) {
 	    if (!iter->target()) {
 		*ofp<<iter->filename()<<":"<<endl;
@@ -158,17 +170,17 @@ inline void V3FileDependImp::writeDepend(const string& filename) {
 }
 
 inline void V3FileDependImp::writeTimes(const string& filename, const string& cmdlineIn) {
-    const VL_UNIQUE_PTR<ofstream> ofp (V3File::new_ofstream(filename));
-    if (ofp->fail()) v3fatalSrc("Can't write "<<filename);
+    const vl_unique_ptr<std::ofstream> ofp (V3File::new_ofstream(filename));
+    if (ofp->fail()) v3fatal("Can't write "<<filename);
 
     string cmdline = stripQuotes(cmdlineIn);
     *ofp<<"# DESCR"<<"IPTION: Verilator output: Timestamp data for --skip-identical.  Delete at will."<<endl;
     *ofp<<"C \""<<cmdline<<"\""<<endl;
 
-    for (set<DependFile>::iterator iter=m_filenameList.begin();
+    for (std::set<DependFile>::iterator iter=m_filenameList.begin();
 	 iter!=m_filenameList.end(); ++iter) {
 	// Read stats of files we create after we're done making them (execpt for this file, of course)
-	DependFile* dfp = (DependFile*)&(*iter);
+        DependFile* dfp = const_cast<DependFile*>(&(*iter));
 	V3Options::fileNfsFlush(dfp->filename());
 	dfp->loadStats();
 	off_t showSize = iter->size();
@@ -176,27 +188,30 @@ inline void V3FileDependImp::writeTimes(const string& filename, const string& cm
 	if (dfp->filename() == filename) { showSize=0; showIno=0; }  // We're writing it, so need to ignore it
 
 	*ofp<<(iter->target()?"T":"S")<<" ";
-	*ofp<<" "<<setw(8)<<showSize;
-	*ofp<<" "<<setw(8)<<showIno;
-	*ofp<<" "<<setw(11)<<iter->mtime();
+        *ofp<<" "<<std::setw(8)<<showSize;
+        *ofp<<" "<<std::setw(8)<<showIno;
+        *ofp<<" "<<std::setw(11)<<iter->cstime();
+        *ofp<<" "<<std::setw(11)<<iter->cnstime();
+        *ofp<<" "<<std::setw(11)<<iter->mstime();
+        *ofp<<" "<<std::setw(11)<<iter->mnstime();
 	*ofp<<" \""<<iter->filename()<<"\"";
 	*ofp<<endl;
     }
 }
 
 inline bool V3FileDependImp::checkTimes(const string& filename, const string& cmdlineIn) {
-    const VL_UNIQUE_PTR<ifstream> ifp (V3File::new_ifstream_nodepend(filename));
+    const vl_unique_ptr<std::ifstream> ifp (V3File::new_ifstream_nodepend(filename));
     if (ifp->fail()) {
 	UINFO(2,"   --check-times failed: no input "<<filename<<endl);
 	return false;
     }
     {
-	string ignore;  getline(*ifp, ignore);
+        string ignore = V3Os::getline(*ifp);
     }
     {
-	char   chkDir;   *ifp>>chkDir;
-	char   quote;    *ifp>>quote;
-	string chkCmdline;  getline(*ifp, chkCmdline, '"');
+        char   chkDir;   *ifp>>chkDir;
+        char   quote;    *ifp>>quote;
+        string chkCmdline = V3Os::getline(*ifp, '"');
 	string cmdline = stripQuotes(cmdlineIn);
 	if (cmdline != chkCmdline) {
 	    UINFO(2,"   --check-times failed: different command line\n");
@@ -209,31 +224,44 @@ inline bool V3FileDependImp::checkTimes(const string& filename, const string& cm
 	off_t  chkSize;  *ifp>>chkSize;
 	ino_t  chkIno;   *ifp>>chkIno;
 	if (ifp->eof()) break;  // Needed to read final whitespace before found eof
-	time_t chkMtime; *ifp>>chkMtime;
-	char   quote;    *ifp>>quote;
-	string chkFilename; getline(*ifp, chkFilename, '"');
-	//UINFO(9," got d="<<chkDir<<" s="<<chkSize<<" mt="<<chkMtime<<" fn = "<<chkFilename<<endl);
+	time_t chkCstime; *ifp>>chkCstime;
+	time_t chkCnstime; *ifp>>chkCnstime;
+	time_t chkMstime; *ifp>>chkMstime;
+	time_t chkMnstime; *ifp>>chkMnstime;
+        char   quote;    *ifp>>quote;
+        string chkFilename = V3Os::getline(*ifp, '"');
 
+	V3Options::fileNfsFlush(chkFilename);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
 	struct stat chkStat;
 	int err = stat(chkFilename.c_str(), &chkStat);
 	if (err!=0) {
 	    UINFO(2,"   --check-times failed: missing "<<chkFilename<<endl);
 	    return false;
 	}
-	if (filename != chkFilename) {  // See above; we were writing it at the time...
+        //UINFO(9," got d="<<chkDir<<" s="<<chkSize<<" ct="<<chkCstime<<"."
+        //        <<chkCnstime<<" mt="<<chkMstime<<"."<<chkMnstime<<" fn = "<<chkFilename<<endl);
+	//UINFO(9," nowSt  s="<<chkStat.st_size<<" mt="<<chkStat.st_mtime<<" ct="<<chkStat.st_ctime<<" fn = "<<chkFilename<<endl);
+	if (filename != chkFilename) {  // Other then the .dat file itself, as we were writing it at the time...
 	    // We'd like this rule:
 	    //if (!(chkStat.st_size == chkSize
-	    //      && chkStat.st_mtime == chkMtime) {
+	    //      && chkStat.st_mtime == chkMstime) {
 	    // However NFS messes us up, as there might be some data outstanding when
 	    // we determined the original size.  For safety, we know the creation time
 	    // must be within a few second window... call it 20 sec.
 	    if (!(chkStat.st_size >= chkSize
 		  && chkStat.st_ino == chkIno
-		  && chkStat.st_mtime >= chkMtime
-		  && chkStat.st_mtime <= (chkMtime + 20))) {
+		  && chkStat.st_ctime == chkCstime
+		  && VL_STAT_CTIME_NSEC(chkStat) == chkCnstime
+		  && chkStat.st_mtime <= (chkMstime + 20)
+		  // Not comparing chkMnstime
+		    )) {
 		UINFO(2,"   --check-times failed: out-of-date "<<chkFilename
 		      <<"; "<<chkStat.st_size<<"=?"<<chkSize
-		      <<" "<<chkStat.st_mtime<<"=?"<<chkMtime<<endl);
+		      <<" "<<chkStat.st_ctime<<"."<<VL_STAT_CTIME_NSEC(chkStat)
+		      <<"=?"<<chkCstime<<"."<<chkCnstime
+		      <<" "<<chkStat.st_mtime<<"."<<VL_STAT_MTIME_NSEC(chkStat)
+		      <<"=?"<<chkMstime<<"."<<chkMnstime<<endl);
 		return false;
 	    }
 	}
@@ -253,11 +281,11 @@ void V3File::addTgtDepend(const string& filename) {
 void V3File::writeDepend(const string& filename) {
     dependImp.writeDepend(filename);
 }
-void V3File::writeTimes(const string& filename, const string& cmdline) {
-    dependImp.writeTimes(filename, cmdline);
+void V3File::writeTimes(const string& filename, const string& cmdlineIn) {
+    dependImp.writeTimes(filename, cmdlineIn);
 }
-bool V3File::checkTimes(const string& filename, const string& cmdline) {
-    return dependImp.checkTimes(filename, cmdline);
+bool V3File::checkTimes(const string& filename, const string& cmdlineIn) {
+    return dependImp.checkTimes(filename, cmdlineIn);
 }
 
 void V3File::createMakeDir() {
@@ -272,7 +300,7 @@ void V3File::createMakeDir() {
 // V3InFilterImp
 
 class V3InFilterImp {
-    typedef map<string,string> FileContentsMap;
+    typedef std::map<string,string> FileContentsMap;
     typedef V3InFilter::StrList StrList;
 
     FileContentsMap	m_contentsMap;	// Cache of file contents
@@ -289,18 +317,14 @@ class V3InFilterImp {
 
 private:
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     bool readContents(const string& filename, StrList& outl) {
 	if (m_pid) return readContentsFilter(filename,outl);
 	else return readContentsFile(filename,outl);
     }
     bool readContentsFile(const string& filename, StrList& outl) {
-	int fd = open (filename.c_str(), O_RDONLY);
+        int fd = open(filename.c_str(), O_RDONLY);
 	if (fd<0) return false;
 	m_readEof = false;
 	readBlocks(fd, -1, outl);
@@ -346,7 +370,7 @@ private:
 	    ssize_t todo = INFILTER_IPC_BUFSIZ;
 	    if (size>0 && size<todo) todo = size;
 	    errno = 0;
-	    ssize_t got = read (fd, buf, todo);
+            ssize_t got = read(fd, buf, todo);
 	    //UINFO(9,"RD GOT g "<< got<<" e "<<errno<<" "<<strerror(errno)<<endl);  usleep(50*1000);
 	    if (got>0) {
 		outl.push_back(string(buf, got));
@@ -388,7 +412,7 @@ private:
 	unsigned offset = 0;
 	while (!m_readEof && out.length()>offset) {
 	    errno = 0;
-	    int got = write (m_writeFd, (out.c_str())+offset, out.length()-offset);
+            int got = write(m_writeFd, (out.c_str())+offset, out.length()-offset);
 	    //UINFO(9,"WR GOT g "<< got<<" e "<<errno<<" "<<strerror(errno)<<endl);  usleep(50*1000);
 	    if (got>0) offset += got;
 	    else if (errno == EINTR || errno == EAGAIN
@@ -440,7 +464,7 @@ private:
 	    dup2(fd_stdout[P_WR], 1);
 	    // And stderr comes from parent
 
-	    execl("/bin/sh", "sh", "-c", command.c_str(), (char*)NULL);
+            execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char*>(NULL));
 	    // Don't use v3fatal, we don't share the common structures any more
 	    fprintf(stderr,"--pipe-filter: exec failed: %s\n",strerror(errno));
 	    _exit(10);
@@ -553,8 +577,7 @@ bool V3InFilter::readWholefile(const string& filename, V3InFilter::StrList& outl
 V3OutFormatter::V3OutFormatter(const string& filename, V3OutFormatter::Language lang)
     : m_filename(filename), m_lang(lang)
     , m_lineno(1), m_column(0)
-    , m_nobreak(false), m_prependIndent(true), m_indentLevel(0)
-    , m_declSAlign(0), m_declNSAlign(0), m_declPadNum(0) {
+    , m_nobreak(false), m_prependIndent(true), m_indentLevel(0), m_bracketLevel(0) {
     m_blockIndent = v3Global.opt.decoration() ? 4 : 1;
     m_commaWidth  = v3Global.opt.decoration() ? 50 : 150;
 }
@@ -566,7 +589,7 @@ const char* V3OutFormatter::indentStr(int num) {
     static char str[MAXSPACE+20];
     char* cp = str;
     if (num>MAXSPACE) num=MAXSPACE;
-    if (m_lang!=LA_VERILOG) {  // verilogPrefixedTree doesn't want tabs
+    if (m_lang!=LA_VERILOG && m_lang!=LA_XML) {  // verilogPrefixedTree doesn't want tabs
 	while (num>=8) {
 	    *cp++ = '\t';
 	    num -= 8;
@@ -607,23 +630,24 @@ bool V3OutFormatter::tokenEnd(const char* cp) {
 	    || tokenStart(cp,"endmodule"));
 }
 
-int V3OutFormatter::endLevels (const char *strg) {
+int V3OutFormatter::endLevels(const char *strg) {
     int levels=m_indentLevel;
-    const char* cp=strg;
-    while (isspace(*cp)) cp++;
-    switch (*cp) {
-    case '\n':  // Newlines.. No need for whitespace before it
-	return (0);
-    case '#':	// Preproc directive
-	return (0);
-    }
     {
-	// label/public/private:  Deindent by 2 spaces
-	const char* mp=cp;
-	for (; isalnum(*mp); mp++) ;
-	if (mp[0]==':' && mp[1]!=':') return (levels-m_blockIndent/2);
+	const char* cp=strg;
+	while (isspace(*cp)) cp++;
+	switch (*cp) {
+	case '\n':  // Newlines.. No need for whitespace before it
+	    return (0);
+	case '#':	// Preproc directive
+	    return (0);
+	}
+	{
+	    // label/public/private:  Deindent by 2 spaces
+	    const char* mp=cp;
+	    for (; isalnum(*mp); mp++) ;
+	    if (mp[0]==':' && mp[1]!=':') return (levels-m_blockIndent/2);
+	}
     }
-
     // We want "} else {" to be one level to the left of normal
     for (const char* cp=strg; *cp; cp++) {
 	switch (*cp) {
@@ -651,14 +675,15 @@ int V3OutFormatter::endLevels (const char *strg) {
     return (levels);
 }
 
-void V3OutFormatter::puts (const char *strg) {
+void V3OutFormatter::puts(const char *strg) {
     if (m_prependIndent) {
 	putsNoTracking(indentStr(endLevels(strg)));
 	m_prependIndent = false;
     }
     bool wordstart = true;
+    bool equalsForBracket = false;  // Looking for "= {"
     for (const char* cp=strg; *cp; cp++) {
-	putcNoTracking (*cp);
+        putcNoTracking(*cp);
 	switch (*cp) {
 	case '\n':
 	    m_lineno++;
@@ -677,9 +702,18 @@ void V3OutFormatter::puts (const char *strg) {
 	    wordstart = true;
 	    break;
 	case '{':
+            if (m_lang==LA_C && (equalsForBracket || m_bracketLevel)) {
+                // Break up large code inside "= { ..."
+                m_parenVec.push(m_indentLevel*m_blockIndent);  // Line up continuation with block+1
+                ++m_bracketLevel;
+            }
 	    indentInc();
 	    break;
 	case '}':
+            if (m_bracketLevel>0) {
+                m_parenVec.pop();
+                --m_bracketLevel;
+            }
 	    indentDec();
 	    break;
 	case '(':
@@ -738,15 +772,26 @@ void V3OutFormatter::puts (const char *strg) {
 	    wordstart = false;
 	    break;
 	}
+
+        switch (*cp) {
+        case '=':
+            equalsForBracket = true;
+            break;
+        case ' ':
+            break;
+        default:
+            equalsForBracket = false;
+            break;
+        }
     }
 }
 
-void V3OutFormatter::putBreakExpr () {
+void V3OutFormatter::putBreakExpr() {
     if (!m_parenVec.empty()) putBreak();
 }
 
 // Add a line break if too wide
-void V3OutFormatter::putBreak () {
+void V3OutFormatter::putBreak() {
     if (!m_nobreak) {
 	//char s[1000]; sprintf(s,"{%d,%d}",m_column,m_parenVec.top()); putsNoTracking(s);
 	if (exceededWidth()) {
@@ -762,18 +807,18 @@ void V3OutFormatter::putsQuoted(const string& strg) {
     putcNoTracking('"');
     string quoted = V3Number::quoteNameControls(strg);
     for (string::const_iterator cp=quoted.begin(); cp!=quoted.end(); ++cp) {
-    	putcNoTracking (*cp);
+        putcNoTracking(*cp);
     }
     putcNoTracking('"');
 }
-void V3OutFormatter::putsNoTracking (const string& strg) {
+void V3OutFormatter::putsNoTracking(const string& strg) {
     // Don't track {}'s, probably because it's a $display format string
     for (string::const_iterator cp=strg.begin(); cp!=strg.end(); ++cp) {
-	putcNoTracking (*cp);
+        putcNoTracking(*cp);
     }
 }
 
-void V3OutFormatter::putcNoTracking (char chr) {
+void V3OutFormatter::putcNoTracking(char chr) {
     switch (chr) {
     case '\n':
 	m_lineno++;
@@ -794,31 +839,13 @@ void V3OutFormatter::putcNoTracking (char chr) {
 	m_nobreak=false;
 	break;
     }
-    putcOutput (chr);
-}
-
-void V3OutFormatter::putAlign (bool/*AlignClass*/ isStatic, int align, int size, const string& prefix) {
-    if (size==0) size=align;
-    int alignSize = size; if (alignSize>8) alignSize=8;
-    int& alignr = isStatic ? m_declSAlign : m_declNSAlign;
-    int padsize = alignSize - (alignr % alignSize);
-    if (padsize && padsize!=alignSize) {
-	// Modern versions of GCC no longer need this, they'll pad for us, so
-	// we'll save the work and danger of getting it wrong.
-	puts("//char\t");
-	puts(prefix);
-	puts("__VpadToAlign"+cvtToStr(alignr)
-	     +"["+cvtToStr(padsize)+"];\n");
-	alignr += padsize;
-	m_declPadNum++;
-    }
-    alignr += size;
+    putcOutput(chr);
 }
 
 //----------------------------------------------------------------------
 // Simple wrappers
 
-void V3OutFormatter::printf (const char *fmt...) {
+void V3OutFormatter::printf(const char *fmt...) {
     char sbuff[5000];
     va_list ap;
     va_start(ap,fmt);
@@ -832,7 +859,7 @@ void V3OutFormatter::printf (const char *fmt...) {
 
 V3OutFile::V3OutFile(const string& filename, V3OutFormatter::Language lang)
     : V3OutFormatter(filename, lang) {
-    if ((m_fp = V3File::new_fopen_w(filename.c_str())) == NULL) {
+    if ((m_fp = V3File::new_fopen_w(filename)) == NULL) {
 	v3fatal("Cannot write "<<filename);
     }
 }

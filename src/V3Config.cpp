@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2010-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2010-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,13 +20,14 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <string>
-#include <map>
-#include <set>
 
 #include "V3Global.h"
 #include "V3String.h"
 #include "V3Config.h"
+
+#include <map>
+#include <set>
+#include <string>
 
 //######################################################################
 
@@ -47,11 +48,11 @@ public:
 	return (m_on>rh.m_on);
     }
 };
-ostream& operator<<(ostream& os, V3ConfigLine rhs) { return os<<rhs.m_lineno<<", "<<rhs.m_code<<", "<<rhs.m_on; }
+std::ostream& operator<<(std::ostream& os, V3ConfigLine rhs) { return os<<rhs.m_lineno<<", "<<rhs.m_code<<", "<<rhs.m_on; }
 
 class V3ConfigIgnores {
-    typedef multiset<V3ConfigLine> IgnLines;	// list of {line,code,on}
-    typedef map<string,IgnLines> IgnFiles;	// {filename} => list of {line,code,on}
+    typedef std::multiset<V3ConfigLine> IgnLines;  // list of {line,code,on}
+    typedef std::map<string,IgnLines> IgnFiles;  // {filename} => list of {line,code,on}
 
     // MEMBERS
     string		m_lastFilename;	// Last filename looked up
@@ -104,7 +105,7 @@ class V3ConfigIgnores {
 public:
     inline static V3ConfigIgnores& singleton() { return s_singleton; }
 
-    void addIgnore(V3ErrorCode code, string wildname, int lineno, bool on) {
+    void addIgnore(V3ErrorCode code, const string& wildname, int lineno, bool on) {
 	// Insert
 	IgnLines* linesp = findWilds(wildname);
 	UINFO(9,"config addIgnore "<<wildname<<":"<<lineno<<", "<<code<<", "<<on<<endl);
@@ -144,7 +145,7 @@ V3ConfigIgnores V3ConfigIgnores::s_singleton;
 //######################################################################
 // V3Config
 
-void V3Config::addIgnore(V3ErrorCode code, bool on, string filename, int min, int max) {
+void V3Config::addIgnore(V3ErrorCode code, bool on, const string& filename, int min, int max) {
     if (filename=="*") {
 	FileLine::globalWarnOff(code,!on);
     } else {

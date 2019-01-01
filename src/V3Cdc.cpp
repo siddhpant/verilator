@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -27,15 +27,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <iomanip>
-#include <vector>
-#include <deque>
-#include <list>
-#include <memory>
 
 #include "V3Global.h"
 #include "V3Cdc.h"
@@ -45,17 +36,21 @@
 #include "V3EmitV.h"
 #include "V3File.h"
 
+#include <algorithm>
+#include <cstdarg>
+#include <deque>
+#include <iomanip>
+#include <list>
+#include <memory>
+#include <vector>
+
 #define CDC_WEIGHT_ASYNC	0x1000	// Weight for edges that feed async logic
 
 //######################################################################
 
 class CdcBaseVisitor : public AstNVisitor {
 public:
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //######################################################################
@@ -76,7 +71,8 @@ public:
 	, m_srcDomainSet(false), m_dstDomainSet(false)
 	, m_asyncPath(false) {}
     virtual ~CdcEitherVertex() {}
-    // Accessors
+    // ACCESSORS
+    virtual FileLine* fileline() const { return nodep()->fileline(); }
     AstScope* scopep() const { return m_scopep; }
     AstNode* nodep() const { return m_nodep; }
     AstSenTree* srcDomainp() const { return m_srcDomainp; }
@@ -99,9 +95,9 @@ public:
     CdcVarVertex(V3Graph* graphp, AstScope* scopep, AstVarScope* varScp)
 	: CdcEitherVertex(graphp, scopep, varScp), m_varScp(varScp), m_cntAsyncRst(0), m_fromFlop(false) {}
     virtual ~CdcVarVertex() {}
-    // Accessors
+    // ACCESSORS
     AstVarScope* varScp() const { return m_varScp; }
-    virtual string name() const { return (cvtToStr((void*)m_varScp)+" "+varScp()->name()); }
+    virtual string name() const { return (cvtToHex(m_varScp)+" "+varScp()->name()); }
     virtual string dotColor() const { return fromFlop() ? "green" : cntAsyncRst() ? "red" : "blue"; }
     int cntAsyncRst() const { return m_cntAsyncRst; }
     void cntAsyncRst(int flag) { m_cntAsyncRst=flag; }
@@ -118,8 +114,8 @@ public:
 	, m_hazard(false), m_isFlop(false)
 	{ srcDomainp(sensenodep); dstDomainp(sensenodep); }
     virtual ~CdcLogicVertex() {}
-    // Accessors
-    virtual string name() const { return (cvtToStr((void*)nodep())+"@"+scopep()->prettyName()); }
+    // ACCESSORS
+    virtual string name() const { return (cvtToHex(nodep())+"@"+scopep()->prettyName()); }
     virtual string dotColor() const { return hazard() ? "black" : "yellow"; }
     bool hazard() const { return m_hazard; }
     void setHazard(AstNode* nodep) { m_hazard = true; nodep->user3(true); }
@@ -135,7 +131,7 @@ private:
     // NODE STATE
     //Entire netlist:
     // {statement}Node::user3	-> bool, indicating not hazard
-    ofstream*		m_ofp;		// Output file
+    std::ofstream* m_ofp;  // Output file
     string		m_prefix;
 
     virtual void visit(AstNode* nodep) {
@@ -145,22 +141,22 @@ private:
 	*m_ofp<<nodep->prettyTypeName()<<" "<<endl;
 	string lastPrefix = m_prefix;
 	m_prefix = lastPrefix + "1:";
-	nodep->op1p()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->op1p());
 	m_prefix = lastPrefix + "2:";
-	nodep->op2p()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->op2p());
 	m_prefix = lastPrefix + "3:";
-	nodep->op3p()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->op3p());
 	m_prefix = lastPrefix + "4:";
-	nodep->op4p()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->op4p());
 	m_prefix = lastPrefix;
     }
 
 public:
     // CONSTUCTORS
-    CdcDumpVisitor(AstNode* nodep, ofstream* ofp, const string& prefix) {
+    CdcDumpVisitor(AstNode* nodep, std::ofstream* ofp, const string& prefix) {
 	m_ofp = ofp;
 	m_prefix = prefix;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~CdcDumpVisitor() {}
 };
@@ -173,7 +169,7 @@ private:
     size_t	m_maxFilenameLen;
 
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	// Keeping line+filename lengths separate is much faster than calling ascii().length()
 	if (nodep->fileline()->lineno() >= m_maxLineno) {
 	    m_maxLineno = nodep->fileline()->lineno()+1;
@@ -187,7 +183,7 @@ public:
     explicit CdcWidthVisitor(AstNode* nodep) {
 	m_maxLineno = 0;
 	m_maxFilenameLen = 0;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~CdcWidthVisitor() {}
     // ACCESSORS
@@ -197,7 +193,7 @@ public:
 	width += 1;  // The :
 	width += cvtToStr(m_maxLineno).length();
 	width += 1;  // Final :
-	return (int)width;
+        return static_cast<int>(width);
     }
 };
 
@@ -225,7 +221,7 @@ private:
     bool		m_inDly;	// In delayed assign
     int			m_inSenItem;	// Number of senitems
     string		m_ofFilename;	// Output filename
-    ofstream*		m_ofp;		// Output file
+    std::ofstream*      m_ofp;          // Output file
     uint32_t		m_userGeneration; // Generation count to avoid slow userClearVertices
     int			m_filelineWidth;  // Characters in longest fileline
 
@@ -241,7 +237,7 @@ private:
 		m_logicVertexp->dstDomainp(m_domainp);
 		m_logicVertexp->dstDomainSet(true);
 	    }
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    m_logicVertexp = NULL;
 
 	    if (0 && debug()>=9) {
@@ -252,7 +248,7 @@ private:
     }
 
     CdcVarVertex* makeVarVertex(AstVarScope* varscp) {
-	CdcVarVertex* vertexp = (CdcVarVertex*)(varscp->user1p());
+        CdcVarVertex* vertexp = reinterpret_cast<CdcVarVertex*>(varscp->user1p());
 	if (!vertexp) {
 	    UINFO(6,"New vertex "<<varscp<<endl);
 	    vertexp = new CdcVarVertex(&m_graph, m_scopep, varscp);
@@ -262,13 +258,13 @@ private:
 		// Create IO vertex - note it's relative to the pointed to var, not where we are now
 		// This allows reporting to easily print the input statement
 		CdcLogicVertex* ioVertexp = new CdcLogicVertex(&m_graph, varscp->scopep(), varscp->varp(), NULL);
-		if (varscp->varp()->isInput()) {
-		    new V3GraphEdge(&m_graph, ioVertexp, vertexp, 1);
-		} else {
-		    new V3GraphEdge(&m_graph, vertexp, ioVertexp, 1);
-		}
-	    }
-	}
+                if (varscp->varp()->isWritable()) {
+                    new V3GraphEdge(&m_graph, vertexp, ioVertexp, 1);
+                } else {
+                    new V3GraphEdge(&m_graph, ioVertexp, vertexp, 1);
+                }
+            }
+        }
 	if (m_inSenItem) {
 	    varscp->user2(true);  // It's like a clock...
 	    // TODO: In the future we could mark it here and do normal clock tree glitch checks also
@@ -284,7 +280,7 @@ private:
 	nodep->v3warnCode(code,msg);
 	if (!told_file) {
 	    told_file = 1;
-	    cerr<<V3Error::msgPrefix()<<"     See details in "<<m_ofFilename<<endl;
+            std::cerr<<V3Error::msgPrefix()<<"     See details in "<<m_ofFilename<<endl;
 	}
 	*m_ofp<<"%Warning-"<<code.ascii()<<": "<<nodep->fileline()<<" "<<msg<<endl;
     }
@@ -376,11 +372,11 @@ private:
 	}
 	else if (CdcVarVertex* vvertexp = dynamic_cast<CdcVarVertex*>(vertexp)) {
 	    if (mark) vvertexp->asyncPath(true);
-	    // If primary I/O, it's ok here back
-	    if (vvertexp->varScp()->varp()->isPrimaryIn()) {
-		// Show the source "input" statement if it exists
+            // If primary I/O, it's ok here back
+            if (vvertexp->varScp()->varp()->isPrimaryInish()) {
+                // Show the source "input" statement if it exists
 		for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep = edgep->inNextp()) {
-		    CdcEitherVertex* eFromVertexp = (CdcEitherVertex*)edgep->fromp();
+                    CdcEitherVertex* eFromVertexp = static_cast<CdcEitherVertex*>(edgep->fromp());
 		    eFromVertexp->asyncPath(true);
 		}
 		return NULL;
@@ -388,7 +384,7 @@ private:
 	    // Also ok if from flop, but partially trace the flop so more obvious to users
 	    if (vvertexp->fromFlop()) {
 		for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep = edgep->inNextp()) {
-		    CdcEitherVertex* eFromVertexp = (CdcEitherVertex*)edgep->fromp();
+                    CdcEitherVertex* eFromVertexp = static_cast<CdcEitherVertex*>(edgep->fromp());
 		    eFromVertexp->asyncPath(true);
 		}
 		return NULL;
@@ -396,7 +392,7 @@ private:
 	}
 
 	for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep = edgep->inNextp()) {
-	    CdcEitherVertex* eFromVertexp = (CdcEitherVertex*)edgep->fromp();
+            CdcEitherVertex* eFromVertexp = static_cast<CdcEitherVertex*>(edgep->fromp());
 	    CdcEitherVertex* submarkp = traceAsyncRecurse(eFromVertexp, mark);
 	    if (submarkp && !mark_outp) mark_outp = submarkp;
 	}
@@ -411,7 +407,7 @@ private:
 	*m_ofp<<"\n";
 	CdcEitherVertex* targetp = vertexp;  // One example destination flop (of possibly many)
 	for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep; edgep = edgep->outNextp()) {
-	    CdcEitherVertex* eToVertexp = (CdcEitherVertex*)edgep->top();
+            CdcEitherVertex* eToVertexp = static_cast<CdcEitherVertex*>(edgep->top());
 	    if (!eToVertexp) targetp = eToVertexp;
 	    if (CdcLogicVertex* vvertexp = dynamic_cast<CdcLogicVertex*>(eToVertexp)) {
 		if (vvertexp->isFlop()  // IE the target flop that is upsetting us
@@ -438,7 +434,7 @@ private:
 	string cont = prefix+sep;
 	string nextsep = "   ";
 	for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep = edgep->inNextp()) {
-	    CdcEitherVertex* eFromVertexp = (CdcEitherVertex*)edgep->fromp();
+            CdcEitherVertex* eFromVertexp = static_cast<CdcEitherVertex*>(edgep->fromp());
 	    if (dumpAsyncRecurse(eFromVertexp, cont, nextsep, level+1)) {
 		nextsep = " | ";
 	    }
@@ -448,7 +444,7 @@ private:
 	// See also OrderGraph::loopsVertexCb(V3GraphVertex* vertexp)
 	AstNode* nodep = vertexp->nodep();
 	string front = pad(filelineWidth(),nodep->fileline()->ascii()+":")+" "+prefix+" +- ";
-	if (nodep->castVarScope()) {
+        if (VN_IS(nodep, VarScope)) {
 	    *m_ofp<<front<<"Variable: "<<nodep->prettyName()<<endl;
 	}
 	else {
@@ -496,38 +492,38 @@ private:
 	}
 
 	string filename = v3Global.opt.makeDir()+"/"+v3Global.opt.prefix()+"__cdc_edges.txt";
-	const VL_UNIQUE_PTR<ofstream> ofp (V3File::new_ofstream(filename));
-	if (ofp->fail()) v3fatalSrc("Can't write "<<filename);
+        const vl_unique_ptr<std::ofstream> ofp (V3File::new_ofstream(filename));
+        if (ofp->fail()) v3fatal("Can't write "<<filename);
 	*ofp<<"Edge Report for "<<v3Global.opt.prefix()<<endl;
 
-	deque<string> report;  // Sort output by name
+        std::deque<string> report;  // Sort output by name
 	for (V3GraphVertex* itp = m_graph.verticesBeginp(); itp; itp=itp->verticesNextp()) {
 	    if (CdcVarVertex* vvertexp = dynamic_cast<CdcVarVertex*>(itp)) {
 		AstVar* varp = vvertexp->varScp()->varp();
 		if (1) {  // varp->isPrimaryIO()
-		    const char* whatp = "wire";
-		    if (varp->isPrimaryIO()) whatp = (varp->isInout()?"inout":varp->isInput()?"input":"output");
+                    string what = "wire";
+                    if (varp->isPrimaryIO()) what = varp->direction().prettyName();
 
-		    ostringstream os;
-		    os.setf(ios::left);
+                    std::ostringstream os;
+                    os.setf(std::ios::left);
 		    // Module name - doesn't work due to flattening having lost the original
 		    // so we assume the modulename matches the filebasename
 		    string fname = vvertexp->varScp()->fileline()->filebasename() + ":";
-		    os<<"  "<<setw(20)<<fname;
-		    os<<"  "<<setw(8)<<whatp;
-		    os<<"  "<<setw(40)<<vvertexp->varScp()->prettyName();
+                    os<<"  "<<std::setw(20)<<fname;
+                    os<<"  "<<std::setw(8)<<what;
+                    os<<"  "<<std::setw(40)<<vvertexp->varScp()->prettyName();
 		    os<<"  SRC=";
 		    if (vvertexp->srcDomainp()) V3EmitV::verilogForTree(vvertexp->srcDomainp(), os);
 		    os<<"  DST=";
 		    if (vvertexp->dstDomainp()) V3EmitV::verilogForTree(vvertexp->dstDomainp(), os);
-		    os<<setw(0);
+                    os<<std::setw(0);
 		    os<<endl;
 		    report.push_back(os.str());
 		}
 	    }
 	}
 	stable_sort(report.begin(), report.end());
-	for (deque<string>::iterator it = report.begin(); it!=report.end(); ++it) {
+        for (std::deque<string>::iterator it = report.begin(); it!=report.end(); ++it) {
 	    *ofp << *it;
 	}
     }
@@ -541,7 +537,7 @@ private:
 	// Variables from flops already are domained
 	if (traceDests ? vertexp->dstDomainSet() : vertexp->srcDomainSet()) return;  // Fully computed
 
-	typedef set<AstSenTree*> SenSet;
+        typedef std::set<AstSenTree*> SenSet;
 	SenSet 	    senouts;   // List of all sensitivities for new signal
 	if (CdcLogicVertex* vvertexp = dynamic_cast<CdcLogicVertex*>(vertexp)) {
 	    if (vvertexp) {}  // Unused
@@ -549,21 +545,23 @@ private:
 	else if (CdcVarVertex* vvertexp = dynamic_cast<CdcVarVertex*>(vertexp)) {
 	    // If primary I/O, give it domain of the input
 	    AstVar* varp = vvertexp->varScp()->varp();
-	    if (varp->isPrimaryIO() && varp->isInput() && !traceDests) {
-		senouts.insert(new AstSenTree(varp->fileline(), new AstSenItem(varp->fileline(), AstSenItem::Combo())));
-	    }
-	}
+            if (varp->isPrimaryIO() && varp->isNonOutput() && !traceDests) {
+                senouts.insert(
+                    new AstSenTree(varp->fileline(),
+                                   new AstSenItem(varp->fileline(), AstSenItem::Combo())));
+            }
+        }
 
 	// Now combine domains of sources/dests
 	if (traceDests) {
 	    for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep; edgep = edgep->outNextp()) {
-		CdcEitherVertex* eToVertexp = (CdcEitherVertex*)edgep->top();
+                CdcEitherVertex* eToVertexp = static_cast<CdcEitherVertex*>(edgep->top());
 		edgeDomainRecurse(eToVertexp, traceDests, level+1);
 		if (eToVertexp->dstDomainp()) senouts.insert(eToVertexp->dstDomainp());
 	    }
 	} else {
 	    for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep = edgep->inNextp()) {
-		CdcEitherVertex* eFromVertexp = (CdcEitherVertex*)edgep->fromp();
+                CdcEitherVertex* eFromVertexp = static_cast<CdcEitherVertex*>(edgep->fromp());
 		edgeDomainRecurse(eFromVertexp, traceDests, level+1);
 		if (eFromVertexp->srcDomainp()) senouts.insert(eFromVertexp->srcDomainp());
 	    }
@@ -584,21 +582,21 @@ private:
 	}
 	// If multiple domains need to do complicated optimizations
 	if (senedited) {
-	    senoutp = V3Const::constifyExpensiveEdit(senoutp)->castSenTree();
+            senoutp = VN_CAST(V3Const::constifyExpensiveEdit(senoutp), SenTree);
 	}
 	if (traceDests) {
 	    vertexp->dstDomainSet(true);  // Note it's set - domainp may be null, so can't use that
 	    vertexp->dstDomainp(senoutp);
 	    if (debug()>=9) {
 		UINFO(9,spaces(level)+"     Tracedst "<<vertexp);
-		if (senoutp) V3EmitV::verilogForTree(senoutp, cout); cout<<endl;
+		if (senoutp) { V3EmitV::verilogForTree(senoutp, cout); cout<<endl; }
 	    }
 	} else {
 	    vertexp->srcDomainSet(true);  // Note it's set - domainp may be null, so can't use that
 	    vertexp->srcDomainp(senoutp);
 	    if (debug()>=9) {
 		UINFO(9,spaces(level)+"     Tracesrc "<<vertexp);
-		if (senoutp) V3EmitV::verilogForTree(senoutp, cout); cout<<endl;
+		if (senoutp) { V3EmitV::verilogForTree(senoutp, cout); cout<<endl; }
 	    }
 	}
     }
@@ -606,14 +604,14 @@ private:
     // VISITORS
     virtual void visit(AstNodeModule* nodep) {
 	m_modp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     virtual void visit(AstScope* nodep) {
 	UINFO(4," SCOPE "<<nodep<<endl);
 	m_scopep = nodep;
 	m_logicVertexp = NULL;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_scopep = NULL;
     }
     virtual void visit(AstActive* nodep) {
@@ -657,14 +655,14 @@ private:
     }
     virtual void visit(AstAssignDly* nodep) {
 	m_inDly = true;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_inDly = false;
     }
     virtual void visit(AstSenItem* nodep) {
 	// Note we look at only AstSenItems, not AstSenGate's
 	// The gating term of a AstSenGate is normal logic
 	m_inSenItem = true;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_inSenItem = false;
     }
     virtual void visit(AstAlways* nodep) {
@@ -691,21 +689,21 @@ private:
     // Math that shouldn't cause us to clear hazard
     virtual void visit(AstConst* nodep) { }
     virtual void visit(AstReplicate* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstConcat* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstNot* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstSel* nodep) {
-	if (!nodep->lsbp()->castConst()) setNodeHazard(nodep);
-	nodep->iterateChildren(*this);
+        if (!VN_IS(nodep->lsbp(), Const)) setNodeHazard(nodep);
+        iterateChildren(nodep);
     }
     virtual void visit(AstNodeSel* nodep) {
-	if (!nodep->bitp()->castConst()) setNodeHazard(nodep);
-	nodep->iterateChildren(*this);
+        if (!VN_IS(nodep->bitp(), Const)) setNodeHazard(nodep);
+        iterateChildren(nodep);
     }
 
     // Ignores
@@ -718,10 +716,10 @@ private:
     // Default
     virtual void visit(AstNodeMath* nodep) {
 	setNodeHazard(nodep);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -739,7 +737,7 @@ public:
 	// Make report of all signal names and what clock edges they have
 	string filename = v3Global.opt.makeDir()+"/"+v3Global.opt.prefix()+"__cdc.txt";
 	m_ofp = V3File::new_ofstream(filename);
-	if (m_ofp->fail()) v3fatalSrc("Can't write "<<filename);
+        if (m_ofp->fail()) v3fatal("Can't write "<<filename);
 	m_ofFilename = filename;
 	*m_ofp<<"CDC Report for "<<v3Global.opt.prefix()<<endl;
 	*m_ofp<<"Each dump below traces logic from inputs/source flops to destination flop(s).\n";
@@ -747,7 +745,7 @@ public:
 	*m_ofp<<"repeating recursively forwards to the destination flop(s).\n";
 	*m_ofp<<"%% Indicates the operator considered potentially hazardous.\n";
 
-	nodep->accept(*this);
+        iterate(nodep);
 	analyze();
 	if (debug()>=1) edgeReport();  // Not useful to users at the moment
 

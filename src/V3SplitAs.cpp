@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -27,28 +27,23 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <vector>
-#include <map>
 
 #include "V3Global.h"
 #include "V3SplitAs.h"
 #include "V3Stats.h"
 #include "V3Ast.h"
 
+#include <algorithm>
+#include <cstdarg>
+#include <map>
+#include <vector>
+
 //######################################################################
 
 class SplitAsBaseVisitor : public AstNVisitor {
 public:
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //######################################################################
@@ -67,13 +62,13 @@ private:
 	}
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
     explicit SplitAsFindVisitor(AstAlways* nodep) {
 	m_splitVscp = NULL;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~SplitAsFindVisitor() {}
     // METHODS
@@ -107,7 +102,7 @@ private:
 	    m_matches = false;
 	    m_keepStmt = false;
 
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 
 	    if (m_keepStmt
 		|| (m_modeMatch ? m_matches : !m_matches)) {
@@ -123,14 +118,16 @@ private:
 	UINFO(9,"     upKeep="<<m_keepStmt<<" STMT "<<nodep<<endl);
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
     SplitAsCleanVisitor(AstAlways* nodep, AstVarScope* vscp, bool modeMatch) {
 	m_splitVscp = vscp;
 	m_modeMatch = modeMatch;
-	nodep->accept(*this);
+        m_keepStmt =  false;
+        m_matches = false;
+        iterate(nodep);
     }
     virtual ~SplitAsCleanVisitor() {}
 };
@@ -195,7 +192,7 @@ private:
     virtual void visit(AstNodeMath* nodep) {}
 
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -203,7 +200,7 @@ public:
     explicit SplitAsVisitor(AstNetlist* nodep) {
 	m_splitVscp = NULL;
 	AstNode::user1ClearTree();	// user1p() used on entire tree
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~SplitAsVisitor() {
 	V3Stats::addStat("Optimizations, isolate_assignments blocks", m_statSplits);
@@ -215,6 +212,8 @@ public:
 
 void V3SplitAs::splitAsAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    SplitAsVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("splitas.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        SplitAsVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("splitas", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

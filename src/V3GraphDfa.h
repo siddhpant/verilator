@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -22,8 +22,8 @@
 #define _V3GRAPHDFA_H_ 1
 #include "config_build.h"
 #include "verilatedos.h"
-#include <vector>
 
+#include "V3Ast.h"  // for VNUser
 #include "V3Global.h"
 #include "V3Graph.h"
 
@@ -124,7 +124,7 @@ public:
     static DfaInput EPSILON() { return VNUser::fromInt(0); }
     static DfaInput NA() { return VNUser::fromInt(1); }	// as in not-applicable
     // CONSTRUCTORS
-    DfaEdge(DfaGraph* graphp, DfaVertex* fromp, DfaVertex* top, DfaInput input)
+    DfaEdge(DfaGraph* graphp, DfaVertex* fromp, DfaVertex* top, const DfaInput& input)
 	: V3GraphEdge(graphp, fromp, top, 1)
 	, m_input(input), m_complement(false) {}
     DfaEdge(DfaGraph* graphp, DfaVertex* fromp, DfaVertex* top, const DfaEdge* copyfrom)

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,8 +20,10 @@
 
 #ifndef _V3WIDTHCOMMIT_H_
 #define _V3WIDTHCOMMIT_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include "V3Error.h"
 #include "V3Ast.h"
 
@@ -44,7 +46,7 @@ private:
 	replaceWithSignedVersion(nodep, nodep->lhsp()->unlinkFrBack()); VL_DANGLING(nodep);
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     void replaceWithSignedVersion(AstNode* nodep, AstNode* newp) {
 	UINFO(6," Replace "<<nodep<<" w/ "<<newp<<endl);
@@ -57,7 +59,7 @@ public:
     WidthRemoveVisitor() {}
     virtual ~WidthRemoveVisitor() {}
     AstNode* mainAcceptEdit(AstNode* nodep) {
-	return nodep->iterateSubtreeReturnEdits(*this);
+        return iterateSubtreeReturnEdits(nodep);
     }
 };
 
@@ -72,7 +74,7 @@ class WidthCommitVisitor : public AstNVisitor {
 
 public:
     // METHODS
-    static AstConst* newIfConstCommitSize (AstConst* nodep) {
+    static AstConst* newIfConstCommitSize(AstConst* nodep) {
 	if (((nodep->dtypep()->width() != nodep->num().width())
 	     || !nodep->num().sized())
 	    && !nodep->num().isString()) {  // Need to force the number from unsized to sized
@@ -99,9 +101,9 @@ private:
 	// dtypep() figures into sameTree() results in better optimizations
 	if (!nodep) return NULL;
 	// Recurse to handle the data type, as may change the size etc of this type
-	if (!nodep->user1()) nodep->accept(*this);
+        if (!nodep->user1()) iterate(nodep);
 	// Look for duplicate
-	if (AstBasicDType* bdtypep = nodep->castBasicDType()) {
+        if (AstBasicDType* bdtypep = VN_CAST(nodep, BasicDType)) {
 	    AstBasicDType* newp = nodep->findInsertSameDType(bdtypep);
 	    if (newp != bdtypep && debug()>=9) {
 		UINFO(9,"dtype replacement "); nodep->dumpSmall(cout);
@@ -114,7 +116,7 @@ private:
     // VISITORS
     virtual void visit(AstConst* nodep) {
 	if (!nodep->dtypep()) nodep->v3fatalSrc("No dtype");
-	nodep->dtypep()->accept(*this);  // Do datatype first
+        iterate(nodep->dtypep());  // Do datatype first
 	if (AstConst* newp = newIfConstCommitSize(nodep)) {
 	    nodep->replaceWith(newp);
 	    AstNode* oldp = nodep; nodep = newp;
@@ -147,7 +149,7 @@ private:
 	nodep->widthMinFromWidth();
 	// Too late to any unspecified sign to be anything but unsigned
 	if (nodep->numeric().isNosign()) nodep->numeric(AstNumeric::UNSIGNED);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	nodep->virtRefDTypep(editOneDType(nodep->virtRefDTypep()));
     }
     virtual void visit(AstNodePreSel* nodep) {
@@ -155,7 +157,7 @@ private:
 	nodep->v3fatalSrc("Presels should have been removed before this point");
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	editDType(nodep);
     }
 public:
@@ -163,7 +165,7 @@ public:
     explicit WidthCommitVisitor(AstNetlist* nodep) {
 	// Were changing widthMin's, so the table is now somewhat trashed
 	nodep->typeTablep()->clearCache();
-	nodep->accept(*this);
+        iterate(nodep);
 	// Don't want to repairCache, as all needed nodes have been added back in
 	// a repair would prevent dead nodes from being detected
     }

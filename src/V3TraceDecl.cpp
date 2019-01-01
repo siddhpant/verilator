@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -26,14 +26,13 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
 
 #include "V3Global.h"
 #include "V3TraceDecl.h"
 #include "V3EmitCBase.h"
 #include "V3Stats.h"
+
+#include <cstdarg>
 
 //######################################################################
 // TraceDecl state, as a visitor of each AstNode
@@ -58,11 +57,7 @@ private:
     V3Double0		m_statIgnSigs;	// Statistic tracking
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     const char* vscIgnoreTrace(AstVarScope* nodep) {
 	// Return true if this shouldn't be traced
@@ -76,7 +71,7 @@ private:
 	}
 	else if (!v3Global.opt.traceUnderscore()) {
 	    string prettyName = varp->prettyName();
-	    if (prettyName.size()>=1 && prettyName[0] == '_')
+            if (!prettyName.empty() && prettyName[0] == '_')
 	        return "Leading underscore";
 	    if (prettyName.find("._") != string::npos)
 	        return "Inlined leading underscore";
@@ -114,7 +109,8 @@ private:
 	AstBasicDType* bdtypep = m_traValuep->dtypep()->basicp();
 	if (widthOverride) bitRange = VNumRange(widthOverride-1,0,false);
 	else if (bdtypep) bitRange = bdtypep->nrange();
-	AstTraceDecl* declp = new AstTraceDecl(m_traVscp->fileline(), m_traShowname, m_traValuep,
+        AstTraceDecl* declp = new AstTraceDecl(m_traVscp->fileline(), m_traShowname,
+                                               m_traVscp->varp(), m_traValuep,
 					       bitRange, arrayRange);
 	UINFO(9,"Decl "<<declp<<endl);
 
@@ -146,10 +142,10 @@ private:
 	//
 	m_initSubFuncp = newCFuncSub(m_initFuncp);
 	// And find variables
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstVarScope* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	// Avoid updating this if (), instead see varp->isTrace()
 	if (!nodep->varp()->isTemp() && !nodep->varp()->isFuncLocal()) {
 	    UINFO(5, "    vsc "<<nodep<<endl);
@@ -172,7 +168,7 @@ private:
 		else m_traValuep = new AstVarRef(nodep->fileline(), nodep, false);
 		{
 		    // Recurse into data type of the signal; the visitors will call addTraceDecl()
-		    varp->dtypeSkipRefp()->accept(*this);
+                    iterate(varp->dtypeSkipRefp());
 		}
 		// Cleanup
 		if (m_traValuep) { m_traValuep->deleteTree(); m_traValuep=NULL; }
@@ -185,24 +181,28 @@ private:
     // VISITORS - Data types when tracing
     virtual void visit(AstConstDType* nodep) {
 	if (m_traVscp) {
-	    nodep->subDTypep()->skipRefp()->accept(*this);
+            iterate(nodep->subDTypep()->skipRefp());
 	}
     }
     virtual void visit(AstRefDType* nodep) {
 	if (m_traVscp) {
-	    nodep->subDTypep()->skipRefp()->accept(*this);
+            iterate(nodep->subDTypep()->skipRefp());
 	}
     }
     virtual void visit(AstUnpackArrayDType* nodep) {
 	// Note more specific dtypes above
 	if (m_traVscp) {
-	    if ((int)nodep->arrayUnpackedElements() > v3Global.opt.traceMaxArray()) {
+            if (static_cast<int>(nodep->arrayUnpackedElements()) > v3Global.opt.traceMaxArray()) {
 		addIgnore("Wide memory > --trace-max-array ents");
-	    } else if (nodep->subDTypep()->skipRefp()->castBasicDType()  // Nothing lower than this array
+            } else if (VN_IS(nodep->subDTypep()->skipRefp(), BasicDType)  // Nothing lower than this array
 		       && m_traVscp->dtypep()->skipRefp() == nodep) {  // Nothing above this array
 		// Simple 1-D array, use exising V3EmitC runtime loop rather than unrolling
 		// This will put "(index)" at end of signal name for us
-		addTraceDecl(nodep->declRange(), 0);
+                if (m_traVscp->dtypep()->skipRefp()->isString()) {
+                    addIgnore("Unsupported: strings");
+                } else {
+                    addTraceDecl(nodep->declRange(), 0);
+                }
 	    } else {
 		// Unroll now, as have no other method to get right signal names
 		AstNodeDType* subtypep = nodep->subDTypep()->skipRefp();
@@ -214,7 +214,7 @@ private:
 			m_traValuep = new AstArraySel(nodep->fileline(), m_traValuep->cloneTree(true),
 						      i - nodep->lsb());
 
-			subtypep->accept(*this);
+                        iterate(subtypep);
 			m_traValuep->deleteTree(); m_traValuep = NULL;
 		    }
 		    m_traShowname = oldShowname;
@@ -239,7 +239,7 @@ private:
 			m_traValuep = new AstSel(nodep->fileline(), m_traValuep->cloneTree(true),
 						 (i - nodep->lsb())*subtypep->width(),
 						 subtypep->width());
-			subtypep->accept(*this);
+                        iterate(subtypep);
 			m_traValuep->deleteTree(); m_traValuep = NULL;
 		    }
 		    m_traShowname = oldShowname;
@@ -258,19 +258,19 @@ private:
 		if (!nodep->packed()) {
 		    addIgnore("Unsupported: Unpacked struct/union");
 		} else {
-		    for (AstMemberDType* itemp = nodep->membersp(); itemp; itemp=itemp->nextp()->castMemberDType()) {
+                    for (AstMemberDType* itemp = nodep->membersp(); itemp; itemp=VN_CAST(itemp->nextp(), MemberDType)) {
 			AstNodeDType* subtypep = itemp->subDTypep()->skipRefp();
 			string oldShowname = m_traShowname;
 			AstNode* oldValuep = m_traValuep;
 			{
 			    m_traShowname += string(" ")+itemp->prettyName();
-			    if (nodep->castStructDType()) {
+                            if (VN_IS(nodep, StructDType)) {
 				m_traValuep = new AstSel(nodep->fileline(), m_traValuep->cloneTree(true),
 							 itemp->lsb(), subtypep->width());
-				subtypep->accept(*this);
+                                iterate(subtypep);
 				m_traValuep->deleteTree(); m_traValuep = NULL;
 			    } else { // Else union, replicate fields
-				subtypep->accept(*this);
+                                iterate(subtypep);
 			    }
 			}
 			m_traShowname = oldShowname;
@@ -282,7 +282,7 @@ private:
     }
     virtual void visit(AstBasicDType* nodep) {
 	if (m_traVscp) {
-	    if (nodep->keyword()==AstBasicDTypeKwd::STRING) {
+            if (nodep->isString()) {
 		addIgnore("Unsupported: strings");
 	    } else {
 		addTraceDecl(VNumRange(), 0);
@@ -297,7 +297,7 @@ private:
 
     //--------------------
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -312,7 +312,7 @@ public:
 	m_funcNum = 0;
 	m_traVscp = NULL;
 	m_traValuep = NULL;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~TraceDeclVisitor() {
 	V3Stats::addStat("Tracing, Traced signals", m_statSigs);
@@ -325,6 +325,8 @@ public:
 
 void V3TraceDecl::traceDeclAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    TraceDeclVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("tracedecl.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        TraceDeclVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("tracedecl", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

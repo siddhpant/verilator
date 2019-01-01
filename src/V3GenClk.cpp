@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -25,24 +25,19 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
 
 #include "V3Global.h"
 #include "V3GenClk.h"
 #include "V3Ast.h"
+
+#include <cstdarg>
 
 //######################################################################
 // GenClk state, as a visitor of each AstNode
 
 class GenClkBaseVisitor : public AstNVisitor {
 protected:
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //######################################################################
@@ -65,20 +60,20 @@ private:
     // METHODS
     AstVarScope* genInpClk(AstVarScope* vscp) {
 	if (vscp->user2p()) {
-	    return vscp->user2p()->castVarScope();
+            return VN_CAST(vscp->user2p(), VarScope);
 	} else {
 	    AstVar* varp = vscp->varp();
 	    string newvarname = "__VinpClk__"+vscp->scopep()->nameDotless()+"__"+varp->name();
 	    // Create:  VARREF(inpclk)
 	    //          ...
 	    //          ASSIGN(VARREF(inpclk), VARREF(var))
-	    AstVar* newvarp = new AstVar (varp->fileline(), AstVarType::MODULETEMP, newvarname, varp);
+            AstVar* newvarp = new AstVar(varp->fileline(), AstVarType::MODULETEMP, newvarname, varp);
 	    m_topModp->addStmtp(newvarp);
 	    AstVarScope* newvscp = new AstVarScope(vscp->fileline(), m_scopetopp, newvarp);
 	    m_scopetopp->addVarp(newvscp);
-	    AstAssign* asninitp = new AstAssign (vscp->fileline(),
-						 new AstVarRef(vscp->fileline(), newvscp, true),
-						 new AstVarRef(vscp->fileline(), vscp, false));
+            AstAssign* asninitp = new AstAssign(vscp->fileline(),
+                                                new AstVarRef(vscp->fileline(), newvscp, true),
+                                                new AstVarRef(vscp->fileline(), vscp, false));
 	    m_scopetopp->addFinalClkp(asninitp);
 	    //
 	    vscp->user2p(newvscp);
@@ -94,7 +89,7 @@ private:
 	if (!scopep) nodep->v3fatalSrc("No scope found on top level");
 	m_scopetopp = scopep;
 
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     //----
     virtual void visit(AstVarRef* nodep) {
@@ -115,17 +110,18 @@ private:
     }
     virtual void visit(AstActive* nodep) {
 	m_activep = nodep;
-	nodep->sensesp()->iterateChildren(*this);  // iterateAndNext?
+        if (!nodep->sensesp()) nodep->v3fatalSrc("Unlinked");
+        iterateChildren(nodep->sensesp());  // iterateAndNext?
 	m_activep = NULL;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstCFunc* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
     //-----
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTRUCTORS
@@ -133,7 +129,7 @@ public:
 	m_topModp = topModp;
 	m_scopetopp = NULL;
 	m_activep = NULL;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~GenClkRenameVisitor() {}
 };
@@ -149,14 +145,15 @@ private:
     AstUser1InUse	m_inuser1;
 
     // STATE
-    AstActive*	m_activep;		// Inside activate statement
-    AstNodeAssign* m_assignp;		// Inside assigndly statement
-    AstNodeModule*	m_topModp;	// Top module
+    AstActive* m_activep;       // Inside activate statement
+    bool m_tracingCall;         // Iterating into a call to a cfunc
+    AstNodeAssign* m_assignp;   // Inside assigndly statement
+    AstNodeModule* m_topModp;   // Top module
 
     // VISITORS
     virtual void visit(AstTopScope* nodep) {
 	AstNode::user1ClearTree();	// user1p() used on entire tree
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	{
 	    // Make the new clock signals and replace any activate references
 	    // See rename, it does some AstNode::userClearTree()'s
@@ -167,13 +164,26 @@ private:
 	// Only track the top scopes, not lower level functions
 	if (nodep->isTop()) {
 	    m_topModp = nodep;
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
     }
     virtual void visit(AstCCall* nodep) {
-	nodep->iterateChildren(*this);
-	// Enter the function and trace it
-	nodep->funcp()->accept(*this);
+        iterateChildren(nodep);
+        if (!nodep->funcp()->entryPoint()) {
+            // Enter the function and trace it
+            m_tracingCall = true;
+            iterate(nodep->funcp());
+        }
+    }
+    virtual void visit(AstCFunc* nodep) {
+        if (!m_tracingCall && !nodep->entryPoint()) {
+            // Only consider logic within a CFunc when looking
+            // at the call to it, and not when scanning whatever
+            // scope it happens to live beneath.
+            return;
+        }
+        m_tracingCall = false;
+        iterateChildren(nodep);
     }
     //----
 
@@ -195,29 +205,31 @@ private:
     virtual void visit(AstNodeAssign* nodep) {
 	//UINFO(8,"ASS "<<nodep<<endl);
 	m_assignp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_assignp = NULL;
     }
     virtual void visit(AstActive* nodep) {
 	UINFO(8,"ACTIVE "<<nodep<<endl);
 	m_activep = nodep;
-	nodep->sensesp()->iterateChildren(*this);  // iterateAndNext?
+        if (!nodep->sensesp()) nodep->v3fatalSrc("Unlinked");
+        iterateChildren(nodep->sensesp());  // iterateAndNext?
 	m_activep = NULL;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
     //-----
     virtual void visit(AstVar*) {}	// Don't want varrefs under it
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTRUCTORS
-    explicit GenClkReadVisitor(AstNetlist* nodep) {
-	m_activep = NULL;
-	m_assignp = NULL;
-	m_topModp = NULL;
-	nodep->accept(*this);
+    explicit GenClkReadVisitor(AstNetlist* nodep)
+        : m_activep(NULL)
+        , m_tracingCall(false)
+        , m_assignp(NULL)
+        , m_topModp(NULL) {
+        iterate(nodep);
     }
     virtual ~GenClkReadVisitor() {}
 };
@@ -227,6 +239,8 @@ public:
 
 void V3GenClk::genClkAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    GenClkReadVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("genclk.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        GenClkReadVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("genclk", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

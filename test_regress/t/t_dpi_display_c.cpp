@@ -31,12 +31,12 @@
 #ifdef NEED_EXTERNS
 extern "C" {
 
-    extern void dpii_display_call (const char* c);
+    extern void dpii_display_call(const char* c);
 }
 #endif
 
 //======================================================================
 
 void dpii_display_call(const char* c) {
-    VL_PRINTF("dpii_display_call: %s\n", c);
+    VL_PRINTF("dpii_display_call: '%s'\n", c);
 }

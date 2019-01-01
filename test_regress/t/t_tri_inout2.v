@@ -22,7 +22,6 @@ module t (/*AUTOARG*/
    ChildA childa ( .A(a), .B(b), .en(en), .Y(y),.Yfix(y_fixed) );
 
    initial in=0;
-   initial en=0;
 
    // Test loop
    always @ (posedge clk) begin
@@ -51,7 +50,7 @@ module t (/*AUTOARG*/
       end
 
       if (in==3) begin
-	     $write("*-* All Finished *-*\n");
+         $write("*-* All Finished *-*\n");
          $finish;
       end
    end

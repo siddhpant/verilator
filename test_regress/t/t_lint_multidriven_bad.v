@@ -17,7 +17,7 @@ module t (/*AUTOARG*/
    output reg [31:0] out;
    output reg [15:0] out2;
 
-   reg [7:0] 	     mem [4];
+   reg [7:0]         mem [4];
 
    always @(posedge clk) begin
       mem[a0] <= d0;
@@ -33,5 +33,5 @@ module t (/*AUTOARG*/
    always @(negedge clk) begin
       out2[15:8] <= d0;
    end
-   
+
 endmodule

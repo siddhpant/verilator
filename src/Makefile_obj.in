@@ -7,7 +7,7 @@
 #
 #*****************************************************************************
 #
-# Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+# Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 # redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -64,6 +64,8 @@ LDFLAGS += @LDFLAGS@
 EXEEXT = @EXEEXT@
 CFG_CXXFLAGS_SRC = @CFG_CXXFLAGS_SRC@
 CFG_CXXFLAGS_PARSER = @CFG_CXXFLAGS_PARSER@
+# Compiler flags that turn on extra warnings
+CFG_CXXFLAGS_WEXTRA = @CFG_CXXFLAGS_WEXTRA@
 
 #### End of system configuration section. ####
 
@@ -73,10 +75,10 @@ TGT = ../../verilator_bin
 #################
 ifeq ($(VL_DEBUG),)
 # Optimize
-COPT = -O
+COPT = -O2
 else
 # Debug
-COPT = -ggdb -DVL_DEBUG
+COPT = -ggdb -DVL_DEBUG -D_GLIBCXX_DEBUG
 # Debug & Profile:
 #LDFLAGS += -pg -g
 #COPT = -ggdb -pg -g
@@ -91,25 +93,20 @@ endif
 LIBS = -lm -lstdc++
 
 CPPFLAGS += -MMD
-CPPFLAGS += -I. -I$(bldsrc) -I$(srcdir) -I$(incdir)
+CPPFLAGS += -I. -I$(bldsrc) -I$(srcdir) -I$(incdir) -I../../include
 CPPFLAGS += -DYYDEBUG 	# Required to get nice error messages
 #CPPFLAGS += -DVL_LEAK_CHECKS 	# If running valgrind or other hunting tool
 CPPFLAGS += $(COPT)
 CPPFLAGS += -MP # Only works on recent GCC versions
 ifeq ($(CFG_WITH_CCWARN),yes)	# Local... Else don't burden users
-CPPFLAGS += -W -Wall $(CFG_CXXFLAGS_SRC) -Werror
+CPPFLAGS += -W -Wall $(CFG_CXXFLAGS_WEXTRA) $(CFG_CXXFLAGS_SRC) -Werror
 #CPPFLAGS += -pedantic-errors
 else
 CPPFLAGS += $(CFG_CXXFLAGS_SRC)
 endif
+
 CPPFLAGSWALL   = $(CPPFLAGS)
 CPPFLAGSPARSER = $(CPPFLAGS) $(CFG_CXXFLAGS_PARSER)
-
-ifneq ($(SYSTEMPERL),)	# Intuit SYSTEMPERL_INCLUDE as it's new
- SYSTEMPERL_INCLUDE ?= $(SYSTEMPERL)/src
-#else if set, leave as-is.
-#else if SYSTEMPERL="" don't set _INCLUDE so source will figure it out
-endif
 
 # Allow RPM builds to specify hardcoded data directories
 # To do this:
@@ -118,8 +115,6 @@ ifeq ($(CFG_WITH_DEFENV),yes)
  CPPFLAGS += -DDEFENV_SYSTEMC_ARCH=\"$(SYSTEMC_ARCH)\"
  CPPFLAGS += -DDEFENV_SYSTEMC_INCLUDE=\"$(SYSTEMC_INCLUDE)\"
  CPPFLAGS += -DDEFENV_SYSTEMC_LIBDIR=\"$(SYSTEMC_LIBDIR)\"
- CPPFLAGS += -DDEFENV_SYSTEMPERL=\"$(SYSTEMPERL)\"
- CPPFLAGS += -DDEFENV_SYSTEMPERL_INCLUDE=\"$(SYSTEMPERL_INCLUDE)\"
  ifeq ($(VERILATOR_ROOT),)	# Use what we're given, or intuit
   CPPFLAGS += -DDEFENV_VERILATOR_ROOT=\"$(pkgdatadir)\"
  else
@@ -200,10 +195,12 @@ RAW_OBJS = \
 	V3GraphAlg.o \
 	V3GraphAcyc.o \
 	V3GraphDfa.o \
+	V3GraphPathChecker.o \
 	V3GraphTest.o \
 	V3Hashed.o \
 	V3Inline.o \
 	V3Inst.o \
+	V3InstrCount.o \
 	V3Life.o \
 	V3LifePost.o \
 	V3LinkCells.o \
@@ -220,9 +217,12 @@ RAW_OBJS = \
 	V3Order.o \
 	V3Os.o \
 	V3Param.o \
+	V3Partition.o \
 	V3PreShell.o \
 	V3Premit.o \
+	V3Reloop.o \
 	V3Scope.o \
+	V3Scoreboard.o \
 	V3Slice.o \
 	V3Split.o \
 	V3SplitAs.o \
@@ -235,6 +235,7 @@ RAW_OBJS = \
 	V3Trace.o \
 	V3TraceDecl.o \
 	V3Tristate.o \
+	V3TSP.o \
 	V3Undriven.o \
 	V3Unknown.o \
 	V3Unroll.o \

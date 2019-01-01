@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,8 +23,10 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include "VlcPoint.h"
 #include "VlcBucket.h"
+
 #include <map>
 #include <vector>
 
@@ -74,13 +76,13 @@ public:
 	cout<<"  Covered,     Rank,  RankPts,  Filename"<<endl;
     }
     void dump(bool bucketsToo) {
-	if (testrun() || computrons()) {
-	    cout<<"  "<<setw(8)<<setfill('0')<<testrun()
-		<<",  "<<setw(7)<<setfill(' ')<<computrons()<<",";
+	if (testrun() || computrons()!=0.0) {
+            cout<<"  "<<std::setw(8)<<std::setfill('0')<<testrun()
+                <<",  "<<std::setw(7)<<std::setfill(' ')<<computrons()<<",";
 	}
-	cout<<"  "<<setw(7)<<setfill(' ')<<bucketsCovered()
-	    <<",  "<<setw(7)<<setfill(' ')<<rank()
-	    <<",  "<<setw(7)<<setfill(' ')<<rankPoints()
+        cout<<"  "<<std::setw(7)<<std::setfill(' ')<<bucketsCovered()
+            <<",  "<<std::setw(7)<<std::setfill(' ')<<rank()
+            <<",  "<<std::setw(7)<<std::setfill(' ')<<rankPoints()
 	    <<",  \""<<name()<<"\""<<endl;
 	if (bucketsToo)	m_buckets.dump();
     }
@@ -92,7 +94,7 @@ public:
 class VlcTests {
 public:
     // TYPES
-    typedef vector<VlcTest*> ByName;
+    typedef std::vector<VlcTest*> ByName;
 private:
     // MEMBERS
     ByName	m_tests;	//< List of all tests

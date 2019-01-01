@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -32,16 +32,15 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <set>
 
 #include "V3Global.h"
 #include "V3Ast.h"
 #include "V3Changed.h"
 #include "V3EmitCBase.h"
+
+#include <algorithm>
+#include <cstdarg>
+#include <set>
 
 //######################################################################
 
@@ -85,7 +84,7 @@ public:
 	    if (!m_tlChgFuncp->stmtsp()) {
 		m_tlChgFuncp->addStmtsp(new AstCReturn(m_scopetopp->fileline(), callp));
 	    } else {
-		AstCReturn* returnp = m_tlChgFuncp->stmtsp()->castCReturn();
+                AstCReturn* returnp = VN_CAST(m_tlChgFuncp->stmtsp(), CReturn);
 		if (!returnp) m_scopetopp->v3fatalSrc("Lost CReturn in top change function");
 		// This is currently using AstLogOr which will shortcut the evaluation if
 		// any function returns true. This is likely what we want and is similar to the logic already in use
@@ -111,8 +110,8 @@ private:
     AstVarScope*	m_vscp;		// Original (non-change) variable we're change-detecting
     AstVarScope*	m_newvscp;	// New (change detect) variable we're change-detecting
     AstNode*		m_varEqnp;	// Original var's equation to get var value
-    AstNode*		m_newLvEqnp;	// New var's equation to read value 
-    AstNode*		m_newRvEqnp;	// New var's equation to set value 
+    AstNode*		m_newLvEqnp;	// New var's equation to read value
+    AstNode*		m_newRvEqnp;	// New var's equation to set value
     uint32_t		m_detects;	// # detects created
 
     // CONSTANTS
@@ -131,13 +130,13 @@ private:
 	}
 	m_statep->maybeCreateChgFuncp();
 
-	AstChangeDet* changep = new AstChangeDet (m_vscp->fileline(),
-						  m_varEqnp->cloneTree(true),
-						  m_newRvEqnp->cloneTree(true), false);
+        AstChangeDet* changep = new AstChangeDet(m_vscp->fileline(),
+                                                 m_varEqnp->cloneTree(true),
+                                                 m_newRvEqnp->cloneTree(true), false);
 	m_statep->m_chgFuncp->addStmtsp(changep);
-	AstAssign* initp = new AstAssign (m_vscp->fileline(),
-					  m_newLvEqnp->cloneTree(true),
-					  m_varEqnp->cloneTree(true));
+        AstAssign* initp = new AstAssign(m_vscp->fileline(),
+                                         m_newLvEqnp->cloneTree(true),
+                                         m_varEqnp->cloneTree(true));
 	m_statep->m_chgFuncp->addFinalsp(initp);
 	EmitCBaseCounterVisitor visitor(initp);
 	m_statep->m_numStmts += visitor.count();
@@ -159,7 +158,7 @@ private:
 	    m_newLvEqnp = new AstArraySel(nodep->fileline(), m_newLvEqnp->cloneTree(true), index);
 	    m_newRvEqnp = new AstArraySel(nodep->fileline(), m_newRvEqnp->cloneTree(true), index);
 
-	    nodep->subDTypep()->skipRefp()->accept(*this);
+            iterate(nodep->subDTypep()->skipRefp());
 
 	    m_varEqnp->deleteTree();
 	    m_newLvEqnp->deleteTree();
@@ -175,13 +174,17 @@ private:
 	    newChangeDet();
 	} else {
 	    if (debug()) nodep->dumpTree(cout,"-DETECTARRAY-class-");
-	    m_vscp->v3warn(E_DETECTARRAY, "Unsupported: Can't detect changes on complex variable (probably with UNOPTFLAT warning suppressed): "<<m_vscp->varp()->prettyName());
+            m_vscp->v3warn(E_DETECTARRAY, "Unsupported: Can't detect changes on complex variable"
+                           " (probably with UNOPTFLAT warning suppressed): "
+                           <<m_vscp->varp()->prettyName());
 	}
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	if (debug()) nodep->dumpTree(cout,"-DETECTARRAY-general-");
-	m_vscp->v3warn(E_DETECTARRAY, "Unsupported: Can't detect changes on complex variable (probably with UNOPTFLAT warning suppressed): "<<m_vscp->varp()->prettyName());
+        m_vscp->v3warn(E_DETECTARRAY, "Unsupported: Can't detect changes on complex variable"
+                       " (probably with UNOPTFLAT warning suppressed): "
+                       <<m_vscp->varp()->prettyName());
     }
 public:
     // CONSTUCTORS
@@ -196,7 +199,7 @@ public:
 	    //          ASSIGN(VARREF(_last), VARREF(var))
 	    //          ...
 	    //          CHANGEDET(VARREF(_last), VARREF(var))
-	    AstVar* newvarp = new AstVar (varp->fileline(), AstVarType::MODULETEMP, newvarname, varp);
+            AstVar* newvarp = new AstVar(varp->fileline(), AstVarType::MODULETEMP, newvarname, varp);
 	    m_statep->m_topModp->addStmtp(newvarp);
 	    m_newvscp = new AstVarScope(m_vscp->fileline(), m_statep->m_scopetopp, newvarp);
 	    m_statep->m_scopetopp->addVarp(m_newvscp);
@@ -205,7 +208,7 @@ public:
 	    m_newLvEqnp = new AstVarRef(m_vscp->fileline(), m_newvscp, true);
 	    m_newRvEqnp = new AstVarRef(m_vscp->fileline(), m_newvscp, false);
 	}
-	vscp->dtypep()->skipRefp()->accept(*this);
+        iterate(vscp->dtypep()->skipRefp());
 	m_varEqnp->deleteTree();
 	m_newLvEqnp->deleteTree();
 	m_newRvEqnp->deleteTree();
@@ -227,11 +230,7 @@ private:
     ChangedState*	m_statep;	// Shared state across visitors
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void genChangeDet(AstVarScope* vscp) {
 	vscp->v3warn(IMPERFECTSCH,"Imperfect scheduling of variable: "<<vscp);
@@ -244,7 +243,7 @@ private:
 	if (nodep->isTop()) {
 	    m_statep->m_topModp = nodep;
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
     virtual void visit(AstTopScope* nodep) {
@@ -267,7 +266,7 @@ private:
 	m_statep->maybeCreateChgFuncp();
 	m_statep->m_chgFuncp->addStmtsp(new AstChangeDet(nodep->fileline(), NULL, NULL, false));
 
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstVarScope* nodep) {
 	if (nodep->isCircular()) {
@@ -278,19 +277,19 @@ private:
 	}
     }
     virtual void visit(AstNodeMath* nodep) {
-	// Short-circuit 
+	// Short-circuit
     }
     //--------------------
     // Default: Just iterate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
     // CONSTUCTORS
     ChangedVisitor(AstNetlist* nodep, ChangedState* statep) {
 	m_statep = statep;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~ChangedVisitor() {}
 };
@@ -300,7 +299,9 @@ public:
 
 void V3Changed::changedAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    ChangedState state;
-    ChangedVisitor visitor (nodep, &state);
-    V3Global::dumpCheckGlobalTree("changed.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        ChangedState state;
+        ChangedVisitor visitor (nodep, &state);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("changed", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

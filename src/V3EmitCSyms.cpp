@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,19 +20,18 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <cmath>
-#include <map>
-#include <set>
-#include <vector>
-#include <algorithm>
 
 #include "V3Global.h"
 #include "V3EmitC.h"
 #include "V3EmitCBase.h"
 #include "V3LanguageWords.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdarg>
+#include <map>
+#include <set>
+#include <vector>
 
 //######################################################################
 // Symbol table emitting
@@ -57,18 +56,18 @@ class EmitCSyms : EmitCBaseVisitor {
 	ScopeVarData(const string& scopeName, const string& varBasePretty, AstVar* varp, AstNodeModule* modp, AstScope* scopep)
 	    : m_scopeName(scopeName), m_varBasePretty(varBasePretty), m_varp(varp), m_modp(modp), m_scopep(scopep) {}
     };
-    typedef map<string,ScopeFuncData> ScopeFuncs;
-    typedef map<string,ScopeVarData> ScopeVars;
-    typedef map<string,ScopeNameData> ScopeNames;
-    typedef pair<AstScope*,AstNodeModule*> ScopeModPair;
-    typedef pair<AstNodeModule*,AstVar*> ModVarPair;
+    typedef std::map<string,ScopeFuncData> ScopeFuncs;
+    typedef std::map<string,ScopeVarData> ScopeVars;
+    typedef std::map<string,ScopeNameData> ScopeNames;
+    typedef std::pair<AstScope*,AstNodeModule*> ScopeModPair;
+    typedef std::pair<AstNodeModule*,AstVar*> ModVarPair;
     struct CmpName {
-	inline bool operator () (const ScopeModPair& lhsp, const ScopeModPair& rhsp) const {
+        inline bool operator() (const ScopeModPair& lhsp, const ScopeModPair& rhsp) const {
 	    return lhsp.first->name() < rhsp.first->name();
 	}
     };
     struct CmpDpi {
-	inline bool operator () (const AstCFunc* lhsp, const AstCFunc* rhsp) const {
+        inline bool operator() (const AstCFunc* lhsp, const AstCFunc* rhsp) const {
 	    if (lhsp->dpiImport() != rhsp->dpiImport()) {
 		// cppcheck-suppress comparisonOfFuncReturningBoolError
 		return lhsp->dpiImport() < rhsp->dpiImport();
@@ -80,9 +79,9 @@ class EmitCSyms : EmitCBaseVisitor {
     // STATE
     AstCFunc*		m_funcp;	// Current function
     AstNodeModule*	m_modp;		// Current module
-    vector<ScopeModPair>  m_scopes;	// Every scope by module
-    vector<AstCFunc*>	m_dpis;		// DPI functions
-    vector<ModVarPair>	m_modVars;	// Each public {mod,var}
+    std::vector<ScopeModPair> m_scopes; // Every scope by module
+    std::vector<AstCFunc*>    m_dpis;   // DPI functions
+    std::vector<ModVarPair>   m_modVars;  // Each public {mod,var}
     ScopeNames		m_scopeNames;	// Each unique AstScopeName
     ScopeFuncs		m_scopeFuncs;	// Each {scope,dpi-export-func}
     ScopeVars		m_scopeVars;	// Each {scope,public-var}
@@ -103,7 +102,8 @@ class EmitCSyms : EmitCBaseVisitor {
 	    if (rsvd != "") {
 		// Generally V3Name should find all of these and throw SYMRSVDWORD.
 		// We'll still check here because the compiler errors resulting if we miss this warning are SO nasty
-		nodep->v3error("Symbol matching "+rsvd+" reserved word reached emitter, should have hit SYMRSVDWORD: '"<<nodep->prettyName()<<"'");
+                nodep->v3error("Symbol matching "+rsvd+" reserved word reached emitter,"
+                               " should have hit SYMRSVDWORD: '"<<nodep->prettyName()<<"'");
 	    }
 	}
     }
@@ -112,9 +112,9 @@ class EmitCSyms : EmitCBaseVisitor {
 	// We didn'e have all m_scopes loaded when we encountered variables, so expand them now
 	// It would be less code if each module inserted its own variables.
 	// Someday.  For now public isn't common.
-	for (vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
-	    AstScope* scopep = it->first;  AstNodeModule* smodp = it->second;
-	    for (vector<ModVarPair>::iterator it = m_modVars.begin(); it != m_modVars.end(); ++it) {
+        for (std::vector<ScopeModPair>::iterator itsc = m_scopes.begin(); itsc != m_scopes.end(); ++itsc) {
+	    AstScope* scopep = itsc->first;  AstNodeModule* smodp = itsc->second;
+            for (std::vector<ModVarPair>::iterator it = m_modVars.begin(); it != m_modVars.end(); ++it) {
 		AstNodeModule* modp = it->first;
 		AstVar* varp = it->second;
 		if (modp == smodp) {
@@ -124,10 +124,10 @@ class EmitCSyms : EmitCBaseVisitor {
 		    string scpName;
 		    string varBase;
 		    if (whole.substr(0,10) == "__DOT__TOP") whole.replace(0,10,"");
-		    string::size_type pos = whole.rfind("__DOT__");
-		    if (pos != string::npos) {
-			scpName = whole.substr(0,pos);
-			varBase = whole.substr(pos+strlen("__DOT__"));
+		    string::size_type dpos = whole.rfind("__DOT__");
+		    if (dpos != string::npos) {
+			scpName = whole.substr(0,dpos);
+			varBase = whole.substr(dpos+strlen("__DOT__"));
 		    } else {
 			varBase = whole;
 		    }
@@ -143,7 +143,7 @@ class EmitCSyms : EmitCBaseVisitor {
 			}
 			if (out.substr(0,10) == "TOP__DOT__") out.replace(0,10,"");
 			if (out.substr(0,4) == "TOP.") out.replace(0,4,"");
-			while ((pos=out.find(".")) != string::npos) {
+                        while ((pos = out.find('.')) != string::npos) {
 			    out.replace(pos, 1, "__");
 			}
 			while ((pos=out.find("__DOT__")) != string::npos) {
@@ -165,7 +165,7 @@ class EmitCSyms : EmitCBaseVisitor {
     // VISITORS
     virtual void visit(AstNetlist* nodep) {
 	// Collect list of scopes
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	varsExpand();
 
 	// Sort by names, so line/process order matters less
@@ -184,7 +184,7 @@ class EmitCSyms : EmitCBaseVisitor {
 	nameCheck(nodep);
 	m_modp = nodep;
 	m_labelNum = 0;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     virtual void visit(AstScope* nodep) {
@@ -209,7 +209,7 @@ class EmitCSyms : EmitCBaseVisitor {
     }
     virtual void visit(AstVar* nodep) {
 	nameCheck(nodep);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	if (nodep->isSigUserRdPublic()
 	    && !nodep->isParam()) {  // The VPI functions require a pointer to allow modification, but parameters are constants
 	    m_modVars.push_back(make_pair(m_modp, nodep));
@@ -223,7 +223,7 @@ class EmitCSyms : EmitCBaseVisitor {
     }
     virtual void visit(AstJumpLabel* nodep) {
 	nodep->labelNum(++m_labelNum);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstCFunc* nodep) {
 	nameCheck(nodep);
@@ -231,15 +231,14 @@ class EmitCSyms : EmitCBaseVisitor {
 	    m_dpis.push_back(nodep);
 	}
 	m_funcp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_funcp = NULL;
     }
     // NOPs
     virtual void visit(AstConst*) {}
     // Default
     virtual void visit(AstNode* nodep) {
-	nameCheck(nodep);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     //---------------------------------------
     // ACCESSORS
@@ -249,7 +248,7 @@ public:
 	m_modp = NULL;
 	m_coverBins = 0;
 	m_labelNum = 0;
-	nodep->accept(*this);
+        iterate(nodep);
     }
 };
 
@@ -279,13 +278,13 @@ void EmitCSyms::emitSymHdr() {
 
     // for
     puts("\n// INCLUDE MODULE CLASSES\n");
-    for (AstNodeModule* nodep = v3Global.rootp()->modulesp(); nodep; nodep=nodep->nextp()->castNodeModule()) {
+    for (AstNodeModule* nodep = v3Global.rootp()->modulesp(); nodep; nodep=VN_CAST(nodep->nextp(), NodeModule)) {
 	puts("#include \""+modClassName(nodep)+".h\"\n");
     }
 
     if (v3Global.dpi()) {
-	puts ("\n// DPI TYPES for DPI Export callbacks (Internal use)\n");
-	map<string,int> types;  // Remove duplicates and sort
+        puts("\n// DPI TYPES for DPI Export callbacks (Internal use)\n");
+        std::map<string,int> types;  // Remove duplicates and sort
 	for (ScopeFuncs::iterator it = m_scopeFuncs.begin(); it != m_scopeFuncs.end(); ++it) {
 	    AstCFunc* funcp = it->second.m_funcp;
 	    if (funcp->dpiExport()) {
@@ -293,26 +292,24 @@ void EmitCSyms::emitSymHdr() {
 		types["typedef void (*"+cbtype+") ("+cFuncArgs(funcp)+");\n"] = 1;
 	    }
 	}
-	for (map<string,int>::iterator it = types.begin(); it != types.end(); ++it) {
+        for (std::map<string,int>::iterator it = types.begin(); it != types.end(); ++it) {
 	    puts(it->first);
 	}
     }
 
     puts("\n// SYMS CLASS\n");
-    puts((string)"class "+symClassName()+" : public VerilatedSyms {\n");
+    puts(string("class ")+symClassName()+" : public VerilatedSyms {\n");
     ofp()->putsPrivate(false);  // public:
 
     puts("\n// LOCAL STATE\n");
-    ofp()->putAlign(V3OutFile::AL_AUTO, sizeof(vluint64_t));
     puts("const char* __Vm_namep;\n");	// Must be before subcells, as constructor order needed before _vlCoverInsert.
-    ofp()->putAlign(V3OutFile::AL_AUTO, sizeof(bool));
-    puts("bool\t__Vm_activity;\t\t///< Used by trace routines to determine change occurred\n");
-    ofp()->putAlign(V3OutFile::AL_AUTO, sizeof(bool));
-    puts("bool\t__Vm_didInit;\n");
+    if (v3Global.opt.trace()) {
+	puts("bool __Vm_activity;  ///< Used by trace routines to determine change occurred\n");
+    }
+    puts("bool __Vm_didInit;\n");
 
-    ofp()->putAlign(V3OutFile::AL_AUTO, sizeof(vluint64_t));
     puts("\n// SUBCELL STATE\n");
-    for (vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
+    for (std::vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
 	AstScope* scopep = it->first;  AstNodeModule* modp = it->second;
 	if (modp->isTop()) {
 	    ofp()->printf("%-30s ", (modClassName(modp)+"*").c_str());
@@ -324,24 +321,31 @@ void EmitCSyms::emitSymHdr() {
 	}
     }
 
-    puts("\n// COVERAGE\n");
     if (m_coverBins) {
-	ofp()->putAlign(V3OutFile::AL_AUTO, sizeof(uint32_t));
-	puts("uint32_t\t__Vcoverage["); puts(cvtToStr(m_coverBins)); puts("];\n");
+	puts("\n// COVERAGE\n");
+	puts("uint32_t __Vcoverage["); puts(cvtToStr(m_coverBins)); puts("];\n");
     }
 
-    puts("\n// SCOPE NAMES\n");
-    for (ScopeNames::iterator it = m_scopeNames.begin(); it != m_scopeNames.end(); ++it) {
-	puts("VerilatedScope __Vscope_"+it->second.m_symName+";\n");
+    {  // Scope names
+	bool did = false;
+	for (ScopeNames::iterator it = m_scopeNames.begin(); it != m_scopeNames.end(); ++it) {
+	    if (!did) {
+	        did = true;
+	        puts("\n// SCOPE NAMES\n");
+	    }
+	    puts("VerilatedScope __Vscope_"+it->second.m_symName+";\n");
+	}
     }
 
     puts("\n// CREATORS\n");
     puts(symClassName()+"("+topClassName()+"* topp, const char* namep);\n");
-    puts((string)"~"+symClassName()+"() {};\n");
+    puts(string("~")+symClassName()+"() {}\n");
 
     puts("\n// METHODS\n");
     puts("inline const char* name() { return __Vm_namep; }\n");
-    puts("inline bool getClearActivity() { bool r=__Vm_activity; __Vm_activity=false; return r;}\n");
+    if (v3Global.opt.trace()) {
+	puts("inline bool getClearActivity() { bool r=__Vm_activity; __Vm_activity=false; return r; }\n");
+    }
     if (v3Global.opt.savable() ) {
 	puts("void __Vserialize(VerilatedSerialize& os);\n");
 	puts("void __Vdeserialize(VerilatedDeserialize& os);\n");
@@ -349,7 +353,7 @@ void EmitCSyms::emitSymHdr() {
     puts("\n");
     puts("} VL_ATTR_ALIGNED(64);\n");
     puts("\n");
-    puts("#endif  /*guard*/\n");
+    puts("#endif // guard\n");
 }
 
 void EmitCSyms::emitSymImp() {
@@ -365,7 +369,7 @@ void EmitCSyms::emitSymImp() {
 
     // Includes
     puts("#include \""+symClassName()+".h\"\n");
-    for (AstNodeModule* nodep = v3Global.rootp()->modulesp(); nodep; nodep=nodep->nextp()->castNodeModule()) {
+    for (AstNodeModule* nodep = v3Global.rootp()->modulesp(); nodep; nodep=VN_CAST(nodep->nextp(), NodeModule)) {
 	puts("#include \""+modClassName(nodep)+".h\"\n");
     }
 
@@ -375,11 +379,13 @@ void EmitCSyms::emitSymImp() {
     puts(symClassName()+"::"+symClassName()+"("+topClassName()+"* topp, const char* namep)\n");
     puts("\t// Setup locals\n");
     puts("\t: __Vm_namep(namep)\n");	// No leak, as we get destroyed when the top is destroyed
-    puts("\t, __Vm_activity(false)\n");
+    if (v3Global.opt.trace()) {
+	puts("\t, __Vm_activity(false)\n");
+    }
     puts("\t, __Vm_didInit(false)\n");
     puts("\t// Setup submodule names\n");
     char comma=',';
-    for (vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
+    for (std::vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
 	AstScope* scopep = it->first;  AstNodeModule* modp = it->second;
 	if (modp->isTop()) {
 	} else {
@@ -397,12 +403,12 @@ void EmitCSyms::emitSymImp() {
     puts("// Pointer to top level\n");
     puts("TOPp = topp;\n");
     puts("// Setup each module's pointers to their submodules\n");
-    for (vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
+    for (std::vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
 	AstScope* scopep = it->first;  AstNodeModule* modp = it->second;
 	if (!modp->isTop()) {
 	    string arrow = scopep->name();
 	    string::size_type pos;
-	    while ((pos=arrow.find(".")) != string::npos) {
+            while ((pos = arrow.find('.')) != string::npos) {
 		arrow.replace(pos, 1, "->");
 	    }
 	    if (arrow.substr(0,5) == "TOP->") arrow.replace(0,5,"TOPp->");
@@ -414,7 +420,7 @@ void EmitCSyms::emitSymImp() {
 
     puts("// Setup each module's pointer back to symbol table (for public functions)\n");
     puts("TOPp->__Vconfigure(this, true);\n");
-    for (vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
+    for (std::vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
 	AstScope* scopep = it->first;  AstNodeModule* modp = it->second;
 	if (!modp->isTop()) {
 	    // first is used by AstCoverDecl's call to __vlCoverInsert
@@ -426,11 +432,17 @@ void EmitCSyms::emitSymImp() {
 	}
     }
 
-    puts("// Setup scope names\n");
-    for (ScopeNames::iterator it = m_scopeNames.begin(); it != m_scopeNames.end(); ++it) {
-	puts("__Vscope_"+it->second.m_symName+".configure(this,name(),");
-	putsQuoted(it->second.m_prettyName);
-	puts(");\n");
+    {  // Setup scope names
+	bool did = false;
+	for (ScopeNames::iterator it = m_scopeNames.begin(); it != m_scopeNames.end(); ++it) {
+	    if (!did) {
+		did = true;
+		puts("// Setup scope names\n");
+	    }
+	    puts("__Vscope_"+it->second.m_symName+".configure(this,name(),");
+	    putsQuoted(it->second.m_prettyName);
+	    puts(");\n");
+	}
     }
 
     if (v3Global.dpi()) {
@@ -469,10 +481,10 @@ void EmitCSyms::emitSymImp() {
 		}
 		for (AstNodeDType* dtypep=varp->dtypep(); dtypep; ) {
 		    dtypep = dtypep->skipRefp();  // Skip AstRefDType/AstTypedef, or return same node
-		    if (AstNodeArrayDType* adtypep = dtypep->castNodeArrayDType()) {
+                    if (const AstNodeArrayDType* adtypep = VN_CAST(dtypep, NodeArrayDType)) {
 			bounds += " ,"; bounds += cvtToStr(adtypep->msb());
 			bounds += ","; bounds += cvtToStr(adtypep->lsb());
-			if (dtypep->castPackArrayDType()) pdim++; else udim++;
+                        if (VN_IS(dtypep, PackArrayDType)) pdim++; else udim++;
 			dtypep = adtypep->subDTypep();
 		    }
 		    else break; // AstBasicDType - nothing below, 1
@@ -497,8 +509,6 @@ void EmitCSyms::emitSymImp() {
 	    puts(varp->vlEnumType());  // VLVT_UINT32 etc
 	    puts(",");
 	    puts(varp->vlEnumDir());  // VLVD_IN etc
-	    if (varp->isSigUserRWPublic()) puts("|VLVF_PUB_RW");
-	    else if (varp->isSigUserRdPublic()) puts("|VLVF_PUB_RD");
 	    puts(",");
 	    puts(cvtToStr(pdim+udim));
 	    puts(bounds);
@@ -515,13 +525,16 @@ void EmitCSyms::emitSymImp() {
 	    string classname = de ? "VerilatedDeserialize" : "VerilatedSerialize";
 	    string funcname = de ? "__Vdeserialize" : "__Vserialize";
 	    string op = de ? ">>" : "<<";
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
 	    puts("void "+symClassName()+"::"+funcname+"("+classname+"& os) {\n");
 	    puts(   "// LOCAL STATE\n");
 	    // __Vm_namep presumably already correct
-	    puts(   "os"+op+"__Vm_activity;\n");
+	    if (v3Global.opt.trace()) {
+		puts(   "os"+op+"__Vm_activity;\n");
+	    }
 	    puts(   "os"+op+"__Vm_didInit;\n");
 	    puts(   "// SUBCELL STATE\n");
-	    for (vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
+            for (std::vector<ScopeModPair>::iterator it = m_scopes.begin(); it != m_scopes.end(); ++it) {
 		AstScope* scopep = it->first;  AstNodeModule* modp = it->second;
 		if (!modp->isTop()) {
 		    puts(   scopep->nameDotless()+"."+funcname+"(os);\n");
@@ -558,16 +571,16 @@ void EmitCSyms::emitDpiHdr() {
 
     int firstExp = 0;
     int firstImp = 0;
-    for (vector<AstCFunc*>::iterator it = m_dpis.begin(); it != m_dpis.end(); ++it) {
+    for (std::vector<AstCFunc*>::iterator it = m_dpis.begin(); it != m_dpis.end(); ++it) {
 	AstCFunc* nodep = *it;
 	if (nodep->dpiExportWrapper()) {
 	    if (!firstExp++) puts("\n// DPI EXPORTS\n");
-	    puts("// DPI Export at "+nodep->fileline()->ascii()+"\n");
+	    puts("// DPI export at "+nodep->fileline()->ascii()+"\n");
 	    puts("extern "+nodep->rtnTypeVoid()+" "+nodep->name()+" ("+cFuncArgs(nodep)+");\n");
 	}
 	else if (nodep->dpiImport()) {
 	    if (!firstImp++) puts("\n// DPI IMPORTS\n");
-	    puts("// DPI Import at "+nodep->fileline()->ascii()+"\n");
+	    puts("// DPI import at "+nodep->fileline()->ascii()+"\n");
 	    puts("extern "+nodep->rtnTypeVoid()+" "+nodep->name()+" ("+cFuncArgs(nodep)+");\n");
 	}
     }
@@ -606,7 +619,7 @@ void EmitCSyms::emitDpiImp() {
     puts("#include \""+topClassName()+".h\"\n");
     puts("\n");
 
-    for (vector<AstCFunc*>::iterator it = m_dpis.begin(); it != m_dpis.end(); ++it) {
+    for (std::vector<AstCFunc*>::iterator it = m_dpis.begin(); it != m_dpis.end(); ++it) {
 	AstCFunc* nodep = *it;
 	if (nodep->dpiExportWrapper()) {
 	    puts("#ifndef _VL_DPIDECL_"+nodep->name()+"\n");
@@ -616,7 +629,7 @@ void EmitCSyms::emitDpiImp() {
 	    puts("return "+topClassName()+"::"+nodep->name()+"(");
 	    string args;
 	    for (AstNode* stmtp = nodep->argsp(); stmtp; stmtp=stmtp->nextp()) {
-		if (AstVar* portp = stmtp->castVar()) {
+                if (const AstVar* portp = VN_CAST(stmtp, Var)) {
 		    if (portp->isIO() && !portp->isFuncReturn()) {
 			if (args != "") args+= ", ";
 			args += portp->name();

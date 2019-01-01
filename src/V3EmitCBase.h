@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,14 +23,13 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <cmath>
 
 #include "V3Global.h"
 #include "V3File.h"
 #include "V3Ast.h"
+
+#include <cstdarg>
+#include <cmath>
 
 //######################################################################
 // Base Visitor class -- holds output file pointer
@@ -46,7 +45,6 @@ public:
     void putsDecoration(const string& str) { if (v3Global.opt.decoration()) puts(str); }
     void putsQuoted(const string& str) { ofp()->putsQuoted(str); }
     bool optSystemC() { return v3Global.opt.systemC(); }
-    bool optSystemPerl() { return v3Global.opt.systemPerl(); }
     static string symClassName() { return v3Global.opt.prefix()+"__Syms"; }
     static string symClassVar()  { return symClassName()+"* __restrict vlSymsp"; }
     static string symTopAssign() { return v3Global.opt.prefix()+"* __restrict vlTOPp VL_ATTR_UNUSED = vlSymsp->TOPp;"; }
@@ -60,19 +58,19 @@ public:
     static string topClassName() {		// Return name of top wrapper module
 	return v3Global.opt.prefix();
     }
-    AstCFile* newCFile(const string& filename, bool slow, bool source) {
+    static AstCFile* newCFile(const string& filename, bool slow, bool source) {
 	AstCFile* cfilep = new AstCFile(v3Global.rootp()->fileline(), filename);
 	cfilep->slow(slow);
 	cfilep->source(source);
 	v3Global.rootp()->addFilesp(cfilep);
 	return cfilep;
     }
-    string cFuncArgs(AstCFunc* nodep) {
+    string cFuncArgs(const AstCFunc* nodep) {
 	// Return argument list for given C function
 	string args = nodep->argTypes();
 	// Might be a user function with argument list.
-	for (AstNode* stmtp = nodep->argsp(); stmtp; stmtp=stmtp->nextp()) {
-	    if (AstVar* portp = stmtp->castVar()) {
+        for (const AstNode* stmtp = nodep->argsp(); stmtp; stmtp=stmtp->nextp()) {
+            if (const AstVar* portp = VN_CAST_CONST(stmtp, Var)) {
 		if (portp->isIO() && !portp->isFuncReturn()) {
 		    if (args != "") args+= ", ";
 		    if (nodep->dpiImport() || nodep->dpiExportWrapper())
@@ -103,13 +101,13 @@ private:
     // VISITORS
     virtual void visit(AstNode* nodep) {
 	m_count++;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
     explicit EmitCBaseCounterVisitor(AstNode* nodep) {
 	m_count = 0;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~EmitCBaseCounterVisitor() {}
     int count() const { return m_count; }

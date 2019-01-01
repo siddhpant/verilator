@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,19 +20,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <sys/types.h>
-#include <sys/stat.h>
-#ifndef _WIN32
-# include <sys/utsname.h>
-#endif
-#include <cctype>
-#include <dirent.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <set>
-#include <list>
-#include <map>
-#include <memory>
 
 #include "V3Global.h"
 #include "V3String.h"
@@ -42,6 +29,19 @@
 #include "V3File.h"
 #include "V3PreShell.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#ifndef _WIN32
+# include <sys/utsname.h>
+#endif
+#include <cctype>
+#include <dirent.h>
+#include <fcntl.h>
+#include <list>
+#include <map>
+#include <memory>
+#include <set>
+
 #include "config_rev.h"
 
 //######################################################################
@@ -50,17 +50,17 @@
 class V3OptionsImp {
 public:
     // TYPES
-    typedef std::map<string,set<string> > DirMap;	// Directory listing
+    typedef std::map<string,std::set<string> > DirMap;  // Directory listing
 
     // STATE
-    list<string>	m_allArgs;	// List of every argument encountered
-    list<string>	m_incDirUsers;		// Include directories (ordered)
-    set<string>		m_incDirUserSet;	// Include directories (for removing duplicates)
-    list<string>	m_incDirFallbacks;	// Include directories (ordered)
-    set<string>		m_incDirFallbackSet;	// Include directories (for removing duplicates)
-    map<string,V3LangCode> m_langExts;		// Language extension map
-    list<string>	m_libExtVs;	// Library extensions (ordered)
-    set<string>		m_libExtVSet;	// Library extensions (for removing duplicates)
+    std::list<string>   m_allArgs;      // List of every argument encountered
+    std::list<string>   m_incDirUsers;          // Include directories (ordered)
+    std::set<string>    m_incDirUserSet;        // Include directories (for removing duplicates)
+    std::list<string>   m_incDirFallbacks;      // Include directories (ordered)
+    std::set<string>    m_incDirFallbackSet;    // Include directories (for removing duplicates)
+    std::map<string,V3LangCode> m_langExts;             // Language extension map
+    std::list<string>   m_libExtVs;     // Library extensions (ordered)
+    std::set<string>    m_libExtVSet;   // Library extensions (for removing duplicates)
     DirMap		m_dirMap;	// Directory listing
 
     // ACCESSOR METHODS
@@ -116,14 +116,14 @@ void V3Options::addDefine(const string& defline, bool allowPlus) {
     while (left != "") {
 	string def = left;
 	string::size_type pos;
-	if (allowPlus && ((pos=left.find("+")) != string::npos)) {
+        if (allowPlus && ((pos = left.find('+')) != string::npos)) {
 	    left = left.substr(pos+1);
 	    def.erase(pos);
 	} else {
 	    left = "";
 	}
 	string value;
-	if ((pos=def.find("=")) != string::npos) {
+        if ((pos = def.find('=')) != string::npos) {
 	    value = def.substr(pos+1);
 	    def.erase(pos);
 	}
@@ -138,14 +138,14 @@ void V3Options::addParameter(const string& paramline, bool allowPlus) {
     while (left != "") {
         string param = left;
         string::size_type pos;
-        if (allowPlus && ((pos=left.find("+")) != string::npos)) {
+        if (allowPlus && ((pos = left.find('+')) != string::npos)) {
             left = left.substr(pos+1);
             param.erase(pos);
         } else {
             left = "";
         }
         string value;
-        if ((pos=param.find("=")) != string::npos) {
+        if ((pos = param.find('=')) != string::npos) {
             value = param.substr(pos+1);
             param.erase(pos);
         }
@@ -155,11 +155,11 @@ void V3Options::addParameter(const string& paramline, bool allowPlus) {
     }
 }
 
-bool V3Options::hasParameter(string name) {
+bool V3Options::hasParameter(const string& name) {
     return m_parameters.find(name) != m_parameters.end();
 }
 
-string V3Options::parameter(string name) {
+string V3Options::parameter(const string& name) {
     string value = m_parameters.find(name)->second;
     m_parameters.erase(m_parameters.find(name));
     return value;
@@ -167,9 +167,9 @@ string V3Options::parameter(string name) {
 
 void V3Options::checkParameters() {
     if (!m_parameters.empty()) {
-        stringstream msg;
+        std::stringstream msg;
         msg << "Parameters from the command line were not found in the design:";
-        for (map<string,string>::iterator it = m_parameters.begin();
+        for (std::map<string,string>::iterator it = m_parameters.begin();
                 it != m_parameters.end(); ++it) {
             msg << " " << it->first;
         }
@@ -235,7 +235,7 @@ void V3Options::addArg(const string& arg) {
 
 string V3Options::allArgsString() {
     string out;
-    for (list<string>::iterator it=m_impp->m_allArgs.begin(); it!=m_impp->m_allArgs.end(); ++it) {
+    for (std::list<string>::iterator it=m_impp->m_allArgs.begin(); it!=m_impp->m_allArgs.end(); ++it) {
 	if (out != "") out += " ";
 	out += *it;
     }
@@ -245,10 +245,10 @@ string V3Options::allArgsString() {
 //######################################################################
 // V3LangCode class functions
 
-V3LangCode::V3LangCode (const char* textp) {
+V3LangCode::V3LangCode(const char* textp) {
     // Return code for given string, or ERROR, which is a bad code
     for (int codei=V3LangCode::L_ERROR; codei<V3LangCode::_ENUM_END; ++codei) {
-	V3LangCode code = (V3LangCode)codei;
+        V3LangCode code = V3LangCode(codei);
 	if (0==strcasecmp(textp,code.ascii())) {
 	    m_e = code; return;
 	}
@@ -260,7 +260,8 @@ V3LangCode::V3LangCode (const char* textp) {
 // File searching
 
 bool V3Options::fileStatDir(const string& filename) {
-    struct stat	sstat;		// Stat information
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
+    struct stat sstat;  // Stat information
     int err = stat(filename.c_str(), &sstat);
     if (err!=0) return false;
     if (!S_ISDIR(sstat.st_mode)) return false;
@@ -268,7 +269,8 @@ bool V3Options::fileStatDir(const string& filename) {
 }
 
 bool V3Options::fileStatNormal(const string& filename) {
-    struct stat	sstat;		// Stat information
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
+    struct stat sstat;  // Stat information
     int err = stat(filename.c_str(), &sstat);
     if (err!=0) return false;
     if (S_ISDIR(sstat.st_mode)) return false;
@@ -286,7 +288,7 @@ void V3Options::fileNfsFlush(const string& filename) {
     }
 }
 
-string V3Options::fileExists (const string& filename) {
+string V3Options::fileExists(const string& filename) {
     // Surprisingly, for VCS and other simulators, this process
     // is quite slow; presumably because of re-reading each directory
     // many times.  So we read a whole dir at once and cache it
@@ -297,10 +299,10 @@ string V3Options::fileExists (const string& filename) {
     V3OptionsImp::DirMap::iterator diriter = m_impp->m_dirMap.find(dir);
     if (diriter == m_impp->m_dirMap.end()) {
 	// Read the listing
-	m_impp->m_dirMap.insert(make_pair(dir, set<string>() ));
+        m_impp->m_dirMap.insert(std::make_pair(dir, std::set<string>() ));
 	diriter = m_impp->m_dirMap.find(dir);
 
-	set<string>* setp = &(diriter->second);
+        std::set<string>* setp = &(diriter->second);
 
 	if (DIR* dirp = opendir(dir.c_str())) {
 	    while (struct dirent* direntp = readdir(dirp)) {
@@ -311,19 +313,19 @@ string V3Options::fileExists (const string& filename) {
 	}
     }
     // Find it
-    set<string>* filesetp = &(diriter->second);
-    set<string>::iterator fileiter = filesetp->find(basename);
+    std::set<string>* filesetp = &(diriter->second);
+    std::set<string>::iterator fileiter = filesetp->find(basename);
     if (fileiter == filesetp->end()) {
 	return "";  // Not found
     }
     // Check if it is a directory, ignore if so
-    string filenameOut = V3Os::filenameFromDirBase (dir, basename);
+    string filenameOut = V3Os::filenameFromDirBase(dir, basename);
     if (!fileStatNormal(filenameOut)) return "";   // Directory
     return filenameOut;
 }
 
 string V3Options::filePathCheckOneDir(const string& modname, const string& dirname) {
-    for (list<string>::iterator extIter=m_impp->m_libExtVs.begin(); extIter!=m_impp->m_libExtVs.end(); ++extIter) {
+    for (std::list<string>::iterator extIter=m_impp->m_libExtVs.begin(); extIter!=m_impp->m_libExtVs.end(); ++extIter) {
 	string fn = V3Os::filenameFromDirBase(dirname, modname+*extIter);
 	string exists = fileExists(fn);
 	if (exists!="") {
@@ -335,17 +337,17 @@ string V3Options::filePathCheckOneDir(const string& modname, const string& dirna
     return "";
 }
 
-string V3Options::filePath (FileLine* fl, const string& modname, const string& lastpath,
-			    const string& errmsg) {   // Error prefix or "" to suppress error
+string V3Options::filePath(FileLine* fl, const string& modname, const string& lastpath,
+                           const string& errmsg) {  // Error prefix or "" to suppress error
     // Find a filename to read the specified module name,
     // using the incdir and libext's.
     // Return "" if not found.
-    for (list<string>::iterator dirIter=m_impp->m_incDirUsers.begin();
+    for (std::list<string>::iterator dirIter=m_impp->m_incDirUsers.begin();
 	 dirIter!=m_impp->m_incDirUsers.end(); ++dirIter) {
 	string exists = filePathCheckOneDir(modname, *dirIter);
 	if (exists!="") return exists;
     }
-    for (list<string>::iterator dirIter=m_impp->m_incDirFallbacks.begin();
+    for (std::list<string>::iterator dirIter=m_impp->m_incDirFallbacks.begin();
 	 dirIter!=m_impp->m_incDirFallbacks.end(); ++dirIter) {
 	string exists = filePathCheckOneDir(modname, *dirIter);
 	if (exists!="") return exists;
@@ -372,16 +374,16 @@ void V3Options::filePathLookedMsg(FileLine* fl, const string& modname) {
 	    fl->v3error("This may be because there's no search path specified with -I<dir>."<<endl);
 	}
 	fl->v3error("Looked in:"<<endl);
-	for (list<string>::iterator dirIter=m_impp->m_incDirUsers.begin();
+        for (std::list<string>::iterator dirIter=m_impp->m_incDirUsers.begin();
 	     dirIter!=m_impp->m_incDirUsers.end(); ++dirIter) {
-	    for (list<string>::iterator extIter=m_impp->m_libExtVs.begin(); extIter!=m_impp->m_libExtVs.end(); ++extIter) {
+            for (std::list<string>::iterator extIter=m_impp->m_libExtVs.begin(); extIter!=m_impp->m_libExtVs.end(); ++extIter) {
 		string fn = V3Os::filenameFromDirBase(*dirIter,modname+*extIter);
 		fl->v3error("      "<<fn<<endl);
 	    }
 	}
-	for (list<string>::iterator dirIter=m_impp->m_incDirFallbacks.begin();
+        for (std::list<string>::iterator dirIter=m_impp->m_incDirFallbacks.begin();
 	     dirIter!=m_impp->m_incDirFallbacks.end(); ++dirIter) {
-	    for (list<string>::iterator extIter=m_impp->m_libExtVs.begin(); extIter!=m_impp->m_libExtVs.end(); ++extIter) {
+            for (std::list<string>::iterator extIter=m_impp->m_libExtVs.begin(); extIter!=m_impp->m_libExtVs.end(); ++extIter) {
 		string fn = V3Os::filenameFromDirBase(*dirIter,modname+*extIter);
 		fl->v3error("      "<<fn<<endl);
 	    }
@@ -396,9 +398,9 @@ void V3Options::filePathLookedMsg(FileLine* fl, const string& modname) {
 V3LangCode V3Options::fileLanguage(const string &filename) {
     string ext = V3Os::filenameNonDir(filename);
     string::size_type pos;
-    if ((pos = ext.rfind(".")) != string::npos) {
+    if ((pos = ext.rfind('.')) != string::npos) {
 	ext.erase(0, pos + 1);
-	map<string,V3LangCode>::iterator it = m_impp->m_langExts.find(ext);
+        std::map<string,V3LangCode>::iterator it = m_impp->m_langExts.find(ext);
 	if (it != m_impp->m_langExts.end()) {
 	    return it->second;
 	}
@@ -409,6 +411,18 @@ V3LangCode V3Options::fileLanguage(const string &filename) {
 
 //######################################################################
 // Environment
+
+string V3Options::getenvBuiltins(const string& var) {
+    if (var == "PERL") return getenvPERL();
+    else if (var == "SYSTEMC") return getenvSYSTEMC();
+    else if (var == "SYSTEMC_ARCH") return getenvSYSTEMC_ARCH();
+    else if (var == "SYSTEMC_INCLUDE") return getenvSYSTEMC_INCLUDE();
+    else if (var == "SYSTEMC_LIBDIR") return getenvSYSTEMC_LIBDIR();
+    else if (var == "VERILATOR_ROOT") return getenvVERILATOR_ROOT();
+    else {
+	return V3Os::getenvStr(var,"");
+    }
+}
 
 string V3Options::getenvPERL() {
     return V3Os::getenvStr("PERL","perl");
@@ -438,6 +452,7 @@ string V3Options::getenvSYSTEMC_ARCH() {
         string sysname = "WIN32";
         var = "win32";
 #else
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
 	struct utsname uts;
 	uname(&uts);
 	string sysname = VString::downcase(uts.sysname);  // aka  'uname -s'
@@ -491,52 +506,6 @@ string V3Options::getenvSYSTEMC_LIBDIR() {
     return var;
 }
 
-string V3Options::getenvSYSTEMPERL() {
-    // Must be careful to set SYSTEMPERL_INCLUDE first else we'd setenv
-    // SYSTEMPERL which would override a DEFENVed SYSTEMPERL_INCLUDE.
-    V3Options::getenvSYSTEMPERL_INCLUDE();
-    return V3Options::getenvSYSTEMPERLGuts();
-}
-
-string V3Options::getenvSYSTEMPERLGuts() {
-    // Get SYSTEMPERL when SYSTEMPERL_INCLUDE has already been tested
-    string var = V3Os::getenvStr("SYSTEMPERL","");
-    if (var == "" && string(DEFENV_SYSTEMPERL) != "") {
-	var = DEFENV_SYSTEMPERL;
-	V3Os::setenvStr("SYSTEMPERL", var, "Hardcoded at build time");
-    }
-    return var;
-}
-
-string V3Options::getenvSYSTEMPERL_INCLUDE() {
-    string var = V3Os::getenvStr("SYSTEMPERL_INCLUDE","");
-    if (var == "") {
-	string sp_src = V3Options::getenvSYSTEMPERLGuts()+"/src";
-	if (V3Options::fileStatNormal(sp_src+"/systemperl.h")) {
- 	    var = sp_src;
-	    V3Os::setenvStr ("SYSTEMPERL_INCLUDE", var, "From $SYSTEMPERL/src");
-	} else if (string(DEFENV_SYSTEMPERL_INCLUDE) != "") {
-	    // Note if SYSTEMPERL is DEFENVed, then SYSTEMPERL_INCLUDE is also DEFENVed
-	    // So we don't need to sweat testing DEFENV_SYSTEMPERL also
-	    var = DEFENV_SYSTEMPERL_INCLUDE;
-	    V3Os::setenvStr("SYSTEMPERL_INCLUDE", var, "Hardcoded at build time");
-	}
-    }
-    // Only correct or check it if we really need the value
-    if (v3Global.opt.usingSystemPerlLibs()) {
-	// We warn about $SYSTEMPERL instead of _INCLUDE since that's more likely
-	// what users will want to set.
-	if (var == "") {
-	    v3fatal("Need $SYSTEMPERL and $SYSTEMPERL_INCLUDE in environment for --sp or --coverage\n"
-		    "Probably System-Perl isn't installed, see http://www.veripool.org/systemperl\n");
-	}
-	else if (var != "" && !V3Options::fileStatNormal(var+"/systemperl.h")) {
-	    v3fatal("Neither $SYSTEMPERL nor $SYSTEMPERL_INCLUDE environment vars to point to System-Perl kit: "<<var<<endl);
-	}
-    }
-    return var;
-}
-
 string V3Options::getenvVERILATOR_ROOT() {
     string var = V3Os::getenvStr("VERILATOR_ROOT","");
     if (var == "" && string(DEFENV_VERILATOR_ROOT) != "") {
@@ -559,14 +528,15 @@ string V3Options::version() {
 }
 
 void V3Options::throwSigsegv() {
-    // cppcheck-suppress nullPointer
-    char* zp=NULL; *zp=0;
+#if !(defined(VL_CPPCHECK) || defined(__clang_analyzer__))
+    char* zp=NULL; *zp=0; // Intentional core dump, ignore warnings here
+#endif
 }
 
 //######################################################################
 // V3 Options utilities
 
-string V3Options::argString (int argc, char** argv) {
+string V3Options::argString(int argc, char** argv) {
     // Return list of arguments as simple string
     string opts;
     for (int i=0; i<argc; ++i)  {
@@ -579,10 +549,10 @@ string V3Options::argString (int argc, char** argv) {
 //######################################################################
 // V3 Options Parsing
 
-void V3Options::parseOpts (FileLine* fl, int argc, char** argv) {
+void V3Options::parseOpts(FileLine* fl, int argc, char** argv) {
     // Parse all options
     // Inital entry point from Verilator.cpp
-    parseOptsList (fl, ".", argc, argv);
+    parseOptsList(fl, ".", argc, argv);
 
     // Default certain options and error check
     // Detailed error, since this is what we often get when run with minimal arguments
@@ -632,12 +602,12 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	if (argv[i][0]=='+') {
 	    char *sw = argv[i];
 	    if ( !strncmp (sw, "+define+", 8)) {
-		addDefine (string (sw+strlen("+define+")), true);
+                addDefine(string(sw+strlen("+define+")), true);
 	    }
 	    else if ( !strncmp (sw, "+incdir+", 8)) {
-		addIncDirUser (parseFileArg(optdir, string (sw+strlen("+incdir+"))));
+                addIncDirUser(parseFileArg(optdir, string(sw+strlen("+incdir+"))));
 	    }
-	    else if (parseLangExt(sw, "+systemverilogext+", V3LangCode::L1800_2012)
+	    else if (parseLangExt(sw, "+systemverilogext+", V3LangCode::L1800_2017)
 		     || parseLangExt(sw, "+verilog1995ext+", V3LangCode::L1364_1995)
 		     || parseLangExt(sw, "+verilog2001ext+", V3LangCode::L1364_2001)
 		     || parseLangExt(sw, "+1364-1995ext+", V3LangCode::L1364_1995)
@@ -645,25 +615,26 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		     || parseLangExt(sw, "+1364-2005ext+", V3LangCode::L1364_2005)
 		     || parseLangExt(sw, "+1800-2005ext+", V3LangCode::L1800_2005)
 		     || parseLangExt(sw, "+1800-2009ext+", V3LangCode::L1800_2009)
-		     || parseLangExt(sw, "+1800-2012ext+", V3LangCode::L1800_2012)) {
+		     || parseLangExt(sw, "+1800-2012ext+", V3LangCode::L1800_2012)
+		     || parseLangExt(sw, "+1800-2017ext+", V3LangCode::L1800_2017)) {
 		// Nothing to do here - all done in the test
 
 	    }
 	    else if ( !strncmp (sw, "+libext+", 8)) {
 		string exts = string(sw+strlen("+libext+"));
 		string::size_type pos;
-		while ((pos=exts.find("+")) != string::npos) {
-		    addLibExtV (exts.substr(0,pos));
+                while ((pos = exts.find('+')) != string::npos) {
+                    addLibExtV(exts.substr(0,pos));
 		    exts = exts.substr(pos+1);
 		}
-		addLibExtV (exts);
+                addLibExtV(exts);
 	    }
 	    else if ( !strcmp (sw, "+librescan")) { // NOP
 	    }
 	    else if ( !strcmp (sw, "+notimingchecks")) { // NOP
 	    }
 	    else {
-		fl->v3fatal ("Invalid Option: "<<argv[i]);
+                fl->v3fatal("Invalid Option: "<<argv[i]);
 	    }
 	    shift;
 	} // + options
@@ -682,7 +653,7 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    else if ( onoff   (sw, "-autoflush", flag/*ref*/) )	{ m_autoflush = flag; }
 	    else if ( onoff   (sw, "-bbox-sys", flag/*ref*/) )	{ m_bboxSys = flag; }
 	    else if ( onoff   (sw, "-bbox-unsup", flag/*ref*/) ) { m_bboxUnsup = flag; }
-	    else if ( !strcmp (sw, "-cc") )			{ m_outFormatOk = true; m_systemC = false; m_systemPerl = false; }
+	    else if ( !strcmp (sw, "-cc") )			{ m_outFormatOk = true; m_systemC = false; }
 	    else if ( onoff   (sw, "-cdc", flag/*ref*/) )	{ m_cdc = flag; }
 	    else if ( onoff   (sw, "-coverage", flag/*ref*/) )	{ coverage(flag); }
 	    else if ( onoff   (sw, "-coverage-line", flag/*ref*/) ){ m_coverageLine = flag; }
@@ -692,9 +663,14 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    else if ( onoff   (sw, "-covsp", flag/*ref*/) )	{ }  // TBD
 	    else if ( !strcmp (sw, "-debug-abort") )		{ abort(); } // Undocumented, see also --debug-sigsegv
 	    else if ( onoff   (sw, "-debug-check", flag/*ref*/) ){ m_debugCheck = flag; }
+            else if ( onoff   (sw, "-debug-leak", flag/*ref*/) ){ m_debugLeak = flag; }
+            else if ( onoff   (sw, "-debug-nondeterminism", flag/*ref*/) ){ m_debugNondeterminism = flag; }
+            else if ( onoff   (sw, "-debug-partition", flag/*ref*/) ){ m_debugPartition = flag; }  // Undocumented
+            else if ( onoff   (sw, "-debug-self-test", flag/*ref*/) ){ m_debugSelfTest = flag; }  // Undocumented
 	    else if ( !strcmp (sw, "-debug-sigsegv") )		{ throwSigsegv(); }  // Undocumented, see also --debug-abort
 	    else if ( !strcmp (sw, "-debug-fatalsrc") )		{ v3fatalSrc("--debug-fatal-src"); }  // Undocumented, see also --debug-abort
 	    else if ( onoff   (sw, "-decoration", flag/*ref*/) ) { m_decoration = flag; }
+            else if ( onoff   (sw, "-dump-defines", flag/*ref*/) ) { m_dumpDefines = flag; }
 	    else if ( onoff   (sw, "-dump-tree", flag/*ref*/) )	{ m_dumpTree = flag ? 3 : 0; }  // Also see --dump-treei
 	    else if ( onoff   (sw, "-exe", flag/*ref*/) )	{ m_exe = flag; }
 	    else if ( onoff   (sw, "-ignc", flag/*ref*/) )	{ m_ignc = flag; }
@@ -706,20 +682,28 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    else if ( onoff   (sw, "-pins-sc-uint", flag/*ref*/) ){ m_pinsScUint = flag; if (!m_pinsScBigUint) m_pinsBv = 65; }
 	    else if ( onoff   (sw, "-pins-sc-biguint", flag/*ref*/) ){ m_pinsScBigUint = flag; m_pinsBv = 513; }
 	    else if ( onoff   (sw, "-pins-uint8", flag/*ref*/) ){ m_pinsUint8 = flag; }
+            else if ( onoff   (sw, "-pp-comments", flag/*ref*/) ) { m_ppComments = flag; }
 	    else if ( !strcmp (sw, "-private") )		{ m_public = false; }
-	    else if ( onoff   (sw, "-profile-cfuncs", flag/*ref*/) )	{ m_profileCFuncs = flag; }
+            else if ( onoff   (sw, "-prof-cfuncs", flag/*ref*/) )       { m_profCFuncs = flag; }
+            else if ( onoff   (sw, "-profile-cfuncs", flag/*ref*/) )    { m_profCFuncs = flag; }  // Undocumented, for backward compat
+            else if ( onoff   (sw, "-prof-threads", flag/*ref*/) )      { m_profThreads = flag; }
 	    else if ( onoff   (sw, "-public", flag/*ref*/) )		{ m_public = flag; }
             else if ( !strncmp(sw, "-pvalue+", strlen("-pvalue+")))	{ addParameter(string(sw+strlen("-pvalue+")), false); }
-	    else if ( onoff   (sw, "-report-unoptflat", flag/*ref*/) )	{ m_reportUnoptflat = flag; }
+            else if ( onoff   (sw, "-relative-cfuncs", flag/*ref*/) )   { m_relativeCFuncs = flag; }
 	    else if ( onoff   (sw, "-relative-includes", flag/*ref*/) )	{ m_relativeIncludes = flag; }
+            else if ( onoff   (sw, "-report-unoptflat", flag/*ref*/) )  { m_reportUnoptflat = flag; }
 	    else if ( onoff   (sw, "-savable", flag/*ref*/) )		{ m_savable = flag; }
-	    else if ( !strcmp (sw, "-sc") )				{ m_outFormatOk = true; m_systemC = true; m_systemPerl = false; }
+	    else if ( !strcmp (sw, "-sc") )				{ m_outFormatOk = true; m_systemC = true; }
 	    else if ( onoff   (sw, "-skip-identical", flag/*ref*/) )	{ m_skipIdentical = flag; }
-	    else if ( !strcmp (sw, "-sp-deprecated") )			{ m_outFormatOk = true; m_systemC = true; m_systemPerl = true; } // Undocumented, old
 	    else if ( onoff   (sw, "-stats", flag/*ref*/) )		{ m_stats = flag; }
 	    else if ( onoff   (sw, "-stats-vars", flag/*ref*/) )	{ m_statsVars = flag; m_stats |= flag; }
 	    else if ( !strcmp (sw, "-sv") )				{ m_defaultLanguage = V3LangCode::L1800_2005; }
+            else if ( onoff   (sw, "-threads-coarsen", flag/*ref*/))    { m_threadsCoarsen = flag; }  // Undocumented, debug
 	    else if ( onoff   (sw, "-trace", flag/*ref*/) )		{ m_trace = flag; }
+            else if ( onoff   (sw, "-trace-fst", flag/*ref*/) )         { m_trace = flag; m_traceFormat = TraceFormat::FST; addLdLibs("-lz"); }
+            else if ( onoff   (sw, "-trace-lxt2", flag/*ref*/) )        {
+                std::cerr<<"-Note: --trace-lxt2 format is deprecated, please use --trace-fst.\n";
+                m_trace = flag; m_traceFormat = TraceFormat::LXT2; addLdLibs("-lz"); }
 	    else if ( onoff   (sw, "-trace-dups", flag/*ref*/) )	{ m_traceDups = flag; }
 	    else if ( onoff   (sw, "-trace-params", flag/*ref*/) )	{ m_traceParams = flag; }
 	    else if ( onoff   (sw, "-trace-structs", flag/*ref*/) )	{ m_traceStructs = flag; }
@@ -753,6 +737,7 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		    case 's': m_oSplit = flag; break;
 		    case 't': m_oLifePost = flag; break;
 		    case 'u': m_oSubst = flag; break;
+                    case 'v': m_oReloop = flag; break;
 		    case 'x': m_oExpand = flag; break;
 		    case 'y': m_oAcycSimp = flag; break;
 		    case 'z': m_oLocalize = flag; break;
@@ -765,7 +750,19 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		shift;
 		addCFlags(argv[i]);
 	    }
-	    else if ( !strcmp (sw, "-comp-limits-syms") && (i+1)<argc ) {  // Undocumented
+            else if ( !strcmp (sw, "-comp-limit-blocks") && (i+1)<argc ) {  // Undocumented
+                shift;
+                m_compLimitBlocks = atoi(argv[i]);
+            }
+            else if ( !strcmp (sw, "-comp-limit-members") && (i+1)<argc ) {  // Undocumented
+                shift;
+                m_compLimitMembers = atoi(argv[i]);  // Ideally power-of-two so structs stay aligned
+            }
+            else if ( !strcmp (sw, "-comp-limit-parens") && (i+1)<argc ) {  // Undocumented
+                shift;
+                m_compLimitParens = atoi(argv[i]);
+            }
+            else if ( !strcmp (sw, "-comp-limit-syms") && (i+1)<argc ) {  // Undocumented
 		shift;
 		VName::maxLength(atoi(argv[i]));
 	    }
@@ -774,7 +771,7 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		m_convergeLimit = atoi(argv[i]);
 	    }
 	    else if ( !strncmp (sw, "-D", 2)) {
-		addDefine (string (sw+strlen("-D")), false);
+                addDefine(string(sw+strlen("-D")), false);
 	    }
 	    else if ( !strcmp (sw, "-debug") ) {
 		setDebugMode(3);
@@ -803,13 +800,22 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    }
 	    else if ( !strcmp (sw, "-FI") && (i+1)<argc ) {
 		shift;
-		addForceInc(parseFileArg(optdir, string (argv[i])));
+                addForceInc(parseFileArg(optdir, string(argv[i])));
 	    }
 	    else if ( !strncmp (sw, "-G", strlen("-G"))) {
-		addParameter(string (sw+strlen("-G")), false);
+                addParameter(string(sw+strlen("-G")), false);
+	    }
+            else if ( !strcmp (sw, "-gate-stmts") && (i+1)<argc ) {
+                shift;
+                m_gateStmts = atoi(argv[i]);
+            }
+	    else if ( !strcmp (sw, "-getenv") && (i+1)<argc ) {
+		shift;
+		cout<<V3Options::getenvBuiltins(argv[i])<<endl;
+		exit(0);
 	    }
 	    else if ( !strncmp (sw, "-I", 2)) {
-		addIncDirUser(parseFileArg(optdir, string (sw+strlen("-I"))));
+                addIncDirUser(parseFileArg(optdir, string(sw+strlen("-I"))));
 	    }
 	    else if ( !strcmp (sw, "-if-depth") && (i+1)<argc ) {
 		shift;
@@ -845,7 +851,7 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    }
 	    else if ( !strcmp (sw, "-Mdir") && (i+1)<argc ) {
 		shift; m_makeDir = argv[i];
-		addIncDirFallback (string (m_makeDir));	 // Need to find generated files there too
+                addIncDirFallback(m_makeDir);  // Need to find generated files there too
 	    }
 	    else if ( !strcmp (sw, "-o") && (i+1)<argc ) {
 		shift; m_exeName = argv[i];
@@ -879,7 +885,7 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		m_traceMaxWidth = atoi(argv[i]);
 	    }
 	    else if ( !strncmp (sw, "-U", 2)) {
-		V3PreShell::undef (string (sw+strlen("-U")));
+                V3PreShell::undef(string(sw+strlen("-U")));
 	    }
 	    else if ( !strcmp (sw, "-unroll-count") ) { // Undocumented optimization tweak
 		shift;
@@ -956,8 +962,14 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		}
 		else {
 		    string msg = sw+strlen("-Wwarn-");
-		    if (!(FileLine::globalWarnOff(msg, false))) {
-			fl->v3fatal("Unknown warning specified: "<<sw);
+		    V3ErrorCode code (msg.c_str());
+		    if (code == V3ErrorCode::EC_ERROR) {
+			if (!isFuture(msg)) {
+			    fl->v3fatal("Unknown warning specified: "<<sw);
+			}
+		    } else {
+			FileLine::globalWarnOff(code, false);
+			V3Error::pretendError(code, false);
 		    }
 		}
 	    }
@@ -967,13 +979,17 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 	    else if ( !strcmp (sw, "-compiler") && (i+1)<argc) {
 		shift;
 		if (!strcmp (argv[i], "clang")) {
-		    m_compLimitParens = 80;   // limit unknown
-		    m_compLimitBlocks = 80;   // limit unknown
+                    m_compLimitBlocks = 80;   // limit unknown
+                    m_compLimitMembers = 64;  // soft limit, has slowdown bug as of clang++ 3.8
+                    m_compLimitParens = 80;   // limit unknown
 		} else if (!strcmp (argv[i], "gcc")) {
-		    m_compLimitParens = 0;
+                    m_compLimitBlocks = 0;   // Bug free
+                    m_compLimitMembers = 64;  // soft limit, has slowdown bug as of g++ 7.1
+                    m_compLimitParens = 0;   // Bug free
 		} else if (!strcmp (argv[i], "msvc")) {
-		    m_compLimitParens = 80;   // 128, but allow some room
-		    m_compLimitBlocks = 80;   // 128, but allow some room
+                    m_compLimitBlocks = 80;   // 128, but allow some room
+                    m_compLimitMembers = 0;  // probably ok, and AFAIK doesn't support anon structs
+                    m_compLimitParens = 80;   // 128, but allow some room
 		} else {
 		    fl->v3fatal("Unknown setting for --compiler: "<<argv[i]);
 		}
@@ -1006,6 +1022,25 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		shift; m_prefix = argv[i];
 		if (m_modPrefix=="") m_modPrefix = m_prefix;
 	    }
+	    else if ( !strcmp (sw, "-no-threads") ) { m_threads = 0; }  // Undocumented until functional
+	    else if ( !strcmp (sw, "-threads") && (i+1)<argc ) {  // Undocumented until functional
+		shift; m_threads = atoi(argv[i]);
+		if (m_threads < 0) fl->v3fatal("--threads must be >= 0: "<<argv[i]);
+	    }
+            else if ( !strcmp (sw, "-threads-dpi") && (i+1)<argc) {
+                shift;
+                if (!strcmp(argv[i], "all")) { m_threadsDpiPure=true; m_threadsDpiUnpure=true; }
+                else if (!strcmp(argv[i], "none")) { m_threadsDpiPure=false; m_threadsDpiUnpure=false; }
+                else if (!strcmp(argv[i], "pure")) { m_threadsDpiPure=true; m_threadsDpiUnpure=false; }
+                else {
+                    fl->v3fatal("Unknown setting for --threads-dpi: "<<argv[i]);
+                }
+            }
+            else if ( !strcmp (sw, "-threads-max-mtasks") ) {
+                shift; m_threadsMaxMTasks = atoi(argv[i]);
+                if (m_threadsMaxMTasks < 1)
+                    fl->v3fatal("--threads-max-mtasks must be >= 1: "<<argv[i]);
+            }
 	    else if ( !strcmp (sw, "-top-module") && (i+1)<argc ) {
 		shift; m_topModule = argv[i];
 	    }
@@ -1022,11 +1057,20 @@ void V3Options::parseOptsList(FileLine* fl, const string& optdir, int argc, char
 		    fl->v3fatal("Unknown setting for --x-assign: "<<argv[i]);
 		}
 	    }
+	    else if ( !strcmp (sw, "-x-initial") && (i+1)<argc) {
+		shift;
+		if (!strcmp (argv[i], "0")) { m_xInitial="0"; }
+		else if (!strcmp (argv[i], "fast")) { m_xInitial="fast"; }
+		else if (!strcmp (argv[i], "unique")) { m_xInitial="unique"; }
+		else {
+		    fl->v3fatal("Unknown setting for --x-initial: "<<argv[i]);
+		}
+	    }
 	    else if ( !strcmp (sw, "-y") && (i+1)<argc ) {
-		shift; addIncDirUser (parseFileArg(optdir,string (argv[i])));
+                shift; addIncDirUser(parseFileArg(optdir,string(argv[i])));
 	    }
 	    else {
-		fl->v3fatal ("Invalid Option: "<<argv[i]);
+                fl->v3fatal("Invalid Option: "<<argv[i]);
 	    }
 	    shift;
 	} // - options
@@ -1060,7 +1104,7 @@ void V3Options::parseOptsFile(FileLine* fl, const string& filename, bool rel) {
     // Read the specified -f filename and process as arguments
     UINFO(1,"Reading Options File "<<filename<<endl);
 
-    const VL_UNIQUE_PTR<ifstream> ifp (V3File::new_ifstream(filename));
+    const vl_unique_ptr<std::ifstream> ifp (V3File::new_ifstream(filename));
     if (ifp->fail()) {
 	fl->v3error("Cannot open -f command file: "+filename);
 	return;
@@ -1069,10 +1113,9 @@ void V3Options::parseOptsFile(FileLine* fl, const string& filename, bool rel) {
     string whole_file;
     bool inCmt = false;
     while (!ifp->eof()) {
-	string line;
-	getline(*ifp, line);
-	// Strip simple comments
-	string oline;
+        string line = V3Os::getline(*ifp);
+        // Strip simple comments
+        string oline;
 	// cppcheck-suppress StlMissingComparison
 	for (string::const_iterator pos = line.begin(); pos != line.end(); ++pos) {
 	    if (inCmt) {
@@ -1100,12 +1143,12 @@ void V3Options::parseOptsFile(FileLine* fl, const string& filename, bool rel) {
     // Split into argument list and process
     // Note we don't respect quotes.  It seems most simulators dont.
     // Woez those that expect it; we'll at least complain.
-    if (whole_file.find("\"") != string::npos) {
+    if (whole_file.find('\"') != string::npos) {
 	fl->v3error("Double quotes in -f files cause unspecified behavior.");
     }
 
     // Strip off arguments and parse into words
-    vector<string> args;
+    std::vector<string> args;
     string::size_type startpos = 0;
     while (startpos < whole_file.length()) {
 	while (isspace(whole_file[startpos])) ++startpos;
@@ -1125,7 +1168,7 @@ void V3Options::parseOptsFile(FileLine* fl, const string& filename, bool rel) {
     // Convert to argv style arg list and parse them
     char* argv [args.size()+1];
     for (unsigned i=0; i<args.size(); ++i) {
-	argv[i] = (char*)args[i].c_str();
+        argv[i] = const_cast<char*>(args[i].c_str());
     }
     parseOptsList(fl, optdir, args.size(), argv);
 }
@@ -1143,9 +1186,9 @@ string V3Options::parseFileArg(const string& optdir, const string& relfilename) 
 //======================================================================
 
 //! Utility to see if we have a language extension argument and if so add it.
-bool V3Options::parseLangExt (const char* swp, //!< argument text
-			      const char* langswp, //!< option to match
-			      const V3LangCode& lc) { //!< language code
+bool V3Options::parseLangExt(const char* swp,  //!< argument text
+                             const char* langswp,  //!< option to match
+                             const V3LangCode& lc) {  //!< language code
     int len = strlen(langswp);
     if (!strncmp(swp, langswp, len)) {
 	addLangExt(swp + len, lc);
@@ -1163,7 +1206,7 @@ void V3Options::showVersion(bool verbose) {
     if (!verbose) return;
 
     cout <<endl;
-    cout << "Copyright 2003-2017 by Wilson Snyder.  Verilator is free software; you can\n";
+    cout << "Copyright 2003-2018 by Wilson Snyder.  Verilator is free software; you can\n";
     cout << "redistribute it and/or modify the Verilator internals under the terms of\n";
     cout << "either the GNU Lesser General Public License Version 3 or the Perl Artistic\n";
     cout << "License Version 2.0.\n";
@@ -1178,8 +1221,6 @@ void V3Options::showVersion(bool verbose) {
     cout << "    SYSTEMC_ARCH       = " << DEFENV_SYSTEMC_ARCH<<endl;
     cout << "    SYSTEMC_INCLUDE    = " << DEFENV_SYSTEMC_INCLUDE<<endl;
     cout << "    SYSTEMC_LIBDIR     = " << DEFENV_SYSTEMC_LIBDIR<<endl;
-    cout << "    SYSTEMPERL         = " << DEFENV_SYSTEMPERL<<endl;
-    cout << "    SYSTEMPERL_INCLUDE = " << DEFENV_SYSTEMPERL_INCLUDE<<endl;
     cout << "    VERILATOR_ROOT     = " << DEFENV_VERILATOR_ROOT<<endl;
 
     cout <<endl;
@@ -1189,8 +1230,6 @@ void V3Options::showVersion(bool verbose) {
     cout << "    SYSTEMC_ARCH       = " << V3Os::getenvStr("SYSTEMC_ARCH","")<<endl;
     cout << "    SYSTEMC_INCLUDE    = " << V3Os::getenvStr("SYSTEMC_INCLUDE","")<<endl;
     cout << "    SYSTEMC_LIBDIR     = " << V3Os::getenvStr("SYSTEMC_LIBDIR","")<<endl;
-    cout << "    SYSTEMPERL         = " << V3Os::getenvStr("SYSTEMPERL","")<<endl;
-    cout << "    SYSTEMPERL_INCLUDE = " << V3Os::getenvStr("SYSTEMPERL_INCLUDE","")<<endl;
     cout << "    VERILATOR_ROOT     = " << V3Os::getenvStr("VERILATOR_ROOT","")<<endl;
     cout << "    VERILATOR_BIN      = " << V3Os::getenvStr("VERILATOR_BIN","")<<endl;  // wrapper uses this
 }
@@ -1210,7 +1249,12 @@ V3Options::V3Options() {
     m_coverageUnderscore = false;
     m_coverageUser = false;
     m_debugCheck = false;
+    m_debugLeak = true;
+    m_debugNondeterminism = false;
+    m_debugPartition = false;
+    m_debugSelfTest = false;
     m_decoration = true;
+    m_dumpDefines = false;
     m_exe = false;
     m_ignc = false;
     m_inhibitSim = false;
@@ -1223,19 +1267,27 @@ V3Options::V3Options() {
     m_pinsScUint = false;
     m_pinsScBigUint = false;
     m_pinsUint8 = false;
-    m_profileCFuncs = false;
+    m_ppComments = false;
+    m_profCFuncs = false;
+    m_profThreads = false;
     m_preprocOnly = false;
     m_preprocNoLine = false;
     m_public = false;
-    m_reportUnoptflat = false;
+    m_relativeCFuncs = true;
     m_relativeIncludes = false;
+    m_reportUnoptflat = false;
     m_savable = false;
     m_skipIdentical = true;
     m_stats = false;
     m_statsVars = false;
     m_systemC = false;
-    m_systemPerl = false;
+    m_threads = 0;
+    m_threadsDpiPure = true;
+    m_threadsDpiUnpure = false;
+    m_threadsCoarsen = true;
+    m_threadsMaxMTasks = 0;
     m_trace = false;
+    m_traceFormat = TraceFormat::VCD;
     m_traceDups = false;
     m_traceParams = true;
     m_traceStructs = false;
@@ -1247,8 +1299,10 @@ V3Options::V3Options() {
 
     m_convergeLimit = 100;
     m_dumpTree = 0;
+    m_gateStmts = 100;
     m_ifDepth = 0;
     m_inlineMult = 2000;
+    m_moduleRecursion = 100;
     m_outputSplit = 0;
     m_outputSplitCFuncs = 0;
     m_outputSplitCTrace = 0;
@@ -1258,8 +1312,9 @@ V3Options::V3Options() {
     m_unrollCount = 64;
     m_unrollStmts = 30000;
 
-    m_compLimitParens = 0;
     m_compLimitBlocks = 0;
+    m_compLimitMembers = 64;
+    m_compLimitParens = 0;
 
     m_makeDir = "obj_dir";
     m_bin = "";
@@ -1272,7 +1327,7 @@ V3Options::V3Options() {
 
     VName::maxLength(128); // Linux filename limits 256; leave half for prefix
 
-    optimize(true);
+    optimize(1);
     // Default +libext+
     addLibExtV("");  // So include "filename.v" will find the same file
     addLibExtV(".v");
@@ -1349,6 +1404,7 @@ void V3Options::optimize(int level) {
     m_oLife = flag;
     m_oLifePost = flag;
     m_oLocalize = flag;
+    m_oReloop = flag;
     m_oReorder = flag;
     m_oSplit = flag;
     m_oSubst = flag;

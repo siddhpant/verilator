@@ -7,15 +7,19 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-my $fail = ($Self->{v3} && verilator_version() !~ /\(ord\)/);
+scenarios(simulator => 1);
 
-compile (
-	 );
+# On Verilator, we expect this to pass.
+#
+# TBD: Will event-based simulators match Verilator's behavior
+# closely enough to pass the same test?
+# If not -- probably we should switch this to be vlt-only.
 
-execute (
-	 check_finished => !$fail,
-	 fails => $fail,
-	 );
+compile(verilator_flags2 => ["--trace"]);
+
+execute(check_finished => 1);
+
+vcd_identical("$Self->{obj_dir}/simx.vcd", "t/$Self->{name}.out");
 
 ok(1);
 1;

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -28,11 +28,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <fstream>
-#include <sstream>
 
 #include "V3Error.h"
 #include "V3Global.h"
@@ -41,6 +36,10 @@
 #include "V3File.h"
 #include "V3ParseImp.h"
 #include "V3PreShell.h"
+
+#include <cstdarg>
+#include <fstream>
+#include <sstream>
 
 //======================================================================
 // Globals
@@ -53,11 +52,11 @@ int		V3ParseSym::s_anonNum = 0;
 // Read class functions
 
 V3ParseImp::~V3ParseImp() {
-    for (deque<string*>::iterator it = m_stringps.begin(); it != m_stringps.end(); ++it) {
+    for (std::deque<string*>::iterator it = m_stringps.begin(); it != m_stringps.end(); ++it) {
 	delete (*it);
     }
     m_stringps.clear();
-    for (deque<V3Number*>::iterator it = m_numberps.begin(); it != m_numberps.end(); ++it) {
+    for (std::deque<V3Number*>::iterator it = m_numberps.begin(); it != m_numberps.end(); ++it) {
 	delete (*it);
     }
     m_numberps.clear();
@@ -90,6 +89,24 @@ size_t V3ParseImp::ppInputToLex(char* buf, size_t max_size) {
     return got;
 }
 
+void V3ParseImp::preprocDumps(std::ostream& os) {
+    if (v3Global.opt.dumpDefines()) {
+        V3PreShell::dumpDefines(os);
+    } else {
+        bool noblanks = v3Global.opt.preprocOnly() && v3Global.opt.preprocNoLine();
+        for (std::deque<string>::iterator it = m_ppBuffers.begin(); it!=m_ppBuffers.end(); ++it) {
+            if (noblanks) {
+                bool blank = true;
+                for (string::iterator its = it->begin(); its != it->end(); ++its) {
+                    if (!isspace(*its) && *its!='\n') { blank=false; break; }
+                }
+                if (blank) continue;
+            }
+            os << *it;
+        }
+    }
+}
+
 void V3ParseImp::parseFile(FileLine* fileline, const string& modfilename, bool inLibrary,
 			   const string& errmsg) {  // "" for no error, make fake node
     string modname = V3Os::filenameNonExt(modfilename);
@@ -104,9 +121,9 @@ void V3ParseImp::parseFile(FileLine* fileline, const string& modfilename, bool i
 	// from the V3LangCode to the various Lex BEGIN states. The language
 	// of this source file is updated here, in case there have been any
 	// intervening +<lang>ext+ options since it was first ecountered.
-	FileLine *modfileline = new FileLine (modfilename, 0);
+        FileLine *modfileline = new FileLine(modfilename, 0);
 	modfileline->language(v3Global.opt.fileLanguage(modfilename));
-	ppPushText((string)"`begin_keywords \""+modfileline->language().ascii()+"\"\n");
+        ppPushText(string("`begin_keywords \"")+modfileline->language().ascii()+"\"\n");
     }
 
     // Preprocess into m_ppBuffer
@@ -128,9 +145,8 @@ void V3ParseImp::parseFile(FileLine* fileline, const string& modfilename, bool i
     if (v3Global.opt.preprocOnly() || v3Global.opt.keepTempFiles()) {
 	// Create output file with all the preprocessor output we buffered up
 	string vppfilename = v3Global.opt.makeDir()+"/"+v3Global.opt.prefix()+"_"+modname+".vpp";
-	ofstream* ofp = NULL;
-	ostream* osp;
-	bool noblanks = v3Global.opt.preprocOnly() && v3Global.opt.preprocNoLine();
+        std::ofstream* ofp = NULL;
+        std::ostream* osp;
 	if (v3Global.opt.preprocOnly()) {
 	    osp = &cout;
 	} else {
@@ -140,16 +156,7 @@ void V3ParseImp::parseFile(FileLine* fileline, const string& modfilename, bool i
 	    fileline->v3error("Cannot write preprocessor output: "+vppfilename);
 	    return;
 	} else {
-	    for (deque<string>::iterator it = m_ppBuffers.begin(); it!=m_ppBuffers.end(); ++it) {
-		if (noblanks) {
-		    bool blank = true;
-		    for (string::iterator its = it->begin(); its != it->end(); ++its) {
-			if (!isspace(*its) && *its!='\n') { blank=false; break; }
-		    }
-		    if (blank) continue;
-		}
-		*osp << *it;
-	    }
+            preprocDumps(*osp);
 	    if (ofp) {
 		ofp->close();
 		delete ofp; VL_DANGLING(ofp);
@@ -159,7 +166,9 @@ void V3ParseImp::parseFile(FileLine* fileline, const string& modfilename, bool i
 
     // Parse it
     if (!v3Global.opt.preprocOnly()) {
-	lexFile (modfilename);
+        lexFile(modfilename);
+    } else {
+	m_ppBuffers.clear();
     }
 }
 
@@ -169,7 +178,7 @@ void V3ParseImp::lexFile(const string& modname) {
     s_parsep = this;
     fileline()->warnResetDefault();	// Reenable warnings on each file
     lexDestroy();	// Restart from clean slate.
-    lexNew(debugFlex()>=9);
+    lexNew();
 
     // Lex it
     if (bisonParse()) v3fatal("Cannot continue\n");
@@ -179,7 +188,7 @@ void V3ParseImp::lexFile(const string& modname) {
 // V3Parse functions
 
 V3Parse::V3Parse(AstNetlist* rootp, V3InFilter* filterp, V3ParseSym* symp) {
-    m_impp = new V3ParseImp (rootp, filterp, symp);
+    m_impp = new V3ParseImp(rootp, filterp, symp);
 }
 V3Parse::~V3Parse() {
     delete m_impp; m_impp = NULL;
@@ -189,5 +198,5 @@ void V3Parse::parseFile(FileLine* fileline, const string& modname, bool inLibrar
     m_impp->parseFile(fileline, modname, inLibrary, errmsg);
 }
 void V3Parse::ppPushText(V3ParseImp* impp, const string& text) {
-    impp->ppPushText(text);
+    if (text != "") impp->ppPushText(text);
 }

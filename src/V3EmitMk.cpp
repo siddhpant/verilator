@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2004-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,18 +20,17 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <cmath>
-#include <map>
-#include <vector>
-#include <algorithm>
 
 #include "V3Global.h"
 #include "V3Os.h"
 #include "V3EmitMk.h"
 #include "V3EmitCBase.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdarg>
+#include <map>
+#include <vector>
 
 //######################################################################
 // Emit statements and math operators
@@ -40,11 +39,7 @@ class EmitMkVisitor : public EmitCBaseVisitor {
 public:
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void putMakeClassEntry(V3OutMkFile& of, const string& name) {
 	of.puts("\t"+V3Os::filenameNonDirExt(name)+" \\\n");
@@ -62,6 +57,8 @@ public:
 	of.puts("\n### Switches...\n");
 	of.puts("# Coverage output mode?  0/1 (from --coverage)\n");
 	of.puts("VM_COVERAGE = "); of.puts(v3Global.opt.coverage()?"1":"0"); of.puts("\n");
+	of.puts("# Threaded output mode?  0/1/N threads (from --threads)\n");
+	of.puts("VM_THREADS = "); of.puts(cvtToStr(v3Global.opt.threads())); of.puts("\n");
 	of.puts("# Tracing output mode?  0/1 (from --trace)\n");
 	of.puts("VM_TRACE = "); of.puts(v3Global.opt.trace()?"1":"0"); of.puts("\n");
 
@@ -90,23 +87,25 @@ public:
 		    if (v3Global.opt.coverage()) {
 			putMakeClassEntry(of, "verilated_cov.cpp");
 		    }
-		    if (v3Global.opt.systemPerl()) {
-			putMakeClassEntry(of, "Sp.cpp");  // Note Sp.cpp includes SpTraceVcdC
-		    }
-		    else {
-			if (v3Global.opt.trace()) {
-			    putMakeClassEntry(of, "verilated_vcd_c.cpp");
-			    if (v3Global.opt.systemC()) {
-				putMakeClassEntry(of, "verilated_vcd_sc.cpp");
-			    }
+		    if (v3Global.opt.trace()) {
+                        putMakeClassEntry(of, v3Global.opt.traceSourceName()+"_c.cpp");
+			if (v3Global.opt.systemC()) {
+                            if (v3Global.opt.traceFormat() != TraceFormat::VCD) {
+                                v3error("Unsupported: This trace format is not supported in SystemC, use VCD format.");
+                            } else {
+                                putMakeClassEntry(of, v3Global.opt.traceSourceName()+"_sc.cpp");
+                            }
 			}
 		    }
+                    if (v3Global.opt.mtasks()) {
+                        putMakeClassEntry(of, "verilated_threads.cpp");
+                    }
 		}
 		else if (support==2 && slow) {
 		}
 		else {
-		    for (AstCFile* nodep = v3Global.rootp()->filesp(); nodep; nodep=nodep->nextp()->castCFile()) {
-			if (nodep->source() && nodep->slow()==slow && nodep->support()==support) {
+                    for (AstCFile* nodep = v3Global.rootp()->filesp(); nodep; nodep=VN_CAST(nodep->nextp(), CFile)) {
+			if (nodep->source() && nodep->slow()==(slow!=0) && nodep->support()==(support!=0)) {
 			    putMakeClassEntry(of, nodep->name());
 			}
 		    }
@@ -139,22 +138,16 @@ public:
 	of.puts("PERL = "+V3Options::getenvPERL()+"\n");
 	of.puts("# Path to Verilator kit (from $VERILATOR_ROOT)\n");
 	of.puts("VERILATOR_ROOT = "+V3Options::getenvVERILATOR_ROOT()+"\n");
-	of.puts("# Path to SystemPerl kit top (from $SYSTEMPERL)\n");
-	of.puts("SYSTEMPERL = "+V3Options::getenvSYSTEMPERL()+"\n");
-	of.puts("# Path to SystemPerl kit includes (from $SYSTEMPERL_INCLUDE)\n");
-	of.puts("SYSTEMPERL_INCLUDE = "+V3Options::getenvSYSTEMPERL_INCLUDE()+"\n");
 	of.puts("# SystemC include directory with systemc.h (from $SYSTEMC_INCLUDE)\n");
 	of.puts(string("SYSTEMC_INCLUDE ?= ")+V3Options::getenvSYSTEMC_INCLUDE()+"\n");
 	of.puts("# SystemC library directory with libsystemc.a (from $SYSTEMC_LIBDIR)\n");
 	of.puts(string("SYSTEMC_LIBDIR ?= ")+V3Options::getenvSYSTEMC_LIBDIR()+"\n");
 
 	of.puts("\n### Switches...\n");
-	of.puts("# SystemPerl output mode?  0/1 (from --sp)\n");
-	of.puts(string("VM_SP = ")+(v3Global.opt.systemPerl()?"1":"0")+"\n");
 	of.puts("# SystemC output mode?  0/1 (from --sc)\n");
-	of.puts(string("VM_SC = ")+((v3Global.opt.systemC()&&!v3Global.opt.systemPerl())?"1":"0")+"\n");
-	of.puts("# SystemPerl or SystemC output mode?  0/1 (from --sp/--sc)\n");
-	of.puts(string("VM_SP_OR_SC = ")+(v3Global.opt.systemC()?"1":"0")+"\n");
+	of.puts(string("VM_SC = ")+((v3Global.opt.systemC())?"1":"0")+"\n");
+	of.puts("# Legacy or SystemC output mode?  0/1 (from --sc)\n");
+	of.puts(string("VM_SP_OR_SC = $(VM_SC)\n"));
 	of.puts("# Deprecated\n");
 	of.puts(string("VM_PCLI = ")+(v3Global.opt.systemC()?"0":"1")+"\n");
 	of.puts("# Deprecated: SystemC architecture to find link library path (from $SYSTEMC_ARCH)\n");
@@ -214,13 +207,14 @@ public:
 	    for (V3StringSet::const_iterator it = cppFiles.begin(); it != cppFiles.end(); ++it) {
 		string cppfile = *it;
 		string basename = V3Os::filenameNonExt(cppfile);
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
 		of.puts(basename+".o: "+cppfile+"\n");
-		of.puts("\t$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST) -c -o $@ $<\n");
+		of.puts("\t$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST) -c -o $@ $<\n");
 	    }
 
 	    of.puts("\n### Link rules... (from --exe)\n");
 	    of.puts(v3Global.opt.exeName()+": $(VK_USER_OBJS) $(VK_GLOBAL_OBJS) $(VM_PREFIX)__ALL.a\n");
-	    of.puts("\t$(LINK) $(LDFLAGS) $^ $(LOADLIBES) $(LDLIBS) -o $@ $(LIBS) $(SC_LIBS) 2>&1 | c++filt\n");
+	    of.puts("\t$(LINK) $(LDFLAGS) $^ $(LOADLIBES) $(LDLIBS) -o $@ $(LIBS) $(SC_LIBS)\n");
 	    of.puts("\n");
 	}
 

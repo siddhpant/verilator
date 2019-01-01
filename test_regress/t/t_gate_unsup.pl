@@ -7,12 +7,14 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-compile (
+scenarios(simulator => 1);
+
+compile(
     # Unsupported: UDP Tables
-    make_top_shell => 0,
-    make_main => 0,
     verilator_flags2 => ["--lint-only --bbox-unsup"],
     verilator_make_gcc => 0,
+    make_top_shell => 0,
+    make_main => 0,
     );
 
 ok(1);

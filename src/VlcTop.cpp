@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,16 +23,16 @@
 #include "VlcOptions.h"
 #include "VlcTop.h"
 
-#include <sys/stat.h>
-#include <fstream>
 #include <algorithm>
+#include <fstream>
+#include <sys/stat.h>
 
 //######################################################################
 
 void VlcTop::readCoverage(const string& filename, bool nonfatal) {
     UINFO(2,"readCoverage "<<filename<<endl);
 
-    ifstream is (filename.c_str());
+    std::ifstream is(filename.c_str());
     if (!is) {
 	if (!nonfatal) v3fatal("Can't read "<<filename);
 	return;
@@ -42,10 +42,9 @@ void VlcTop::readCoverage(const string& filename, bool nonfatal) {
     VlcTest* testp = tests().newTest(filename, 0, 0);
 
     while (!is.eof()) {
-	string line;
-	getline(is, line);
-	//UINFO(9," got "<<line<<endl);
-	if (line[0] == 'C') {
+        string line = V3Os::getline(is);
+        //UINFO(9," got "<<line<<endl);
+        if (line[0] == 'C') {
 	    string::size_type secspace=3;
 	    for (; secspace<line.length(); secspace++) {
 		if (line[secspace]=='\'' && line[secspace+1]==' ') break;
@@ -69,7 +68,7 @@ void VlcTop::readCoverage(const string& filename, bool nonfatal) {
 void VlcTop::writeCoverage(const string& filename) {
     UINFO(2,"writeCoverage "<<filename<<endl);
 
-    ofstream os (filename.c_str());
+    std::ofstream os(filename.c_str());
     if (!os) {
 	v3fatal("Can't write "<<filename);
 	return;
@@ -85,7 +84,7 @@ void VlcTop::writeCoverage(const string& filename) {
 //********************************************************************
 
 struct CmpComputrons {
-    inline bool operator () (const VlcTest* lhsp, const VlcTest* rhsp) const {
+    inline bool operator() (const VlcTest* lhsp, const VlcTest* rhsp) const {
 	if (lhsp->computrons() != rhsp->computrons()) {
 	    return lhsp->computrons() < rhsp->computrons();
 	}
@@ -98,7 +97,7 @@ void VlcTop::rank() {
     vluint64_t nextrank=1;
 
     // Sort by computrons, so fast tests get selected first
-    vector<VlcTest*> bytime;
+    std::vector<VlcTest*> bytime;
     for (VlcTests::ByName::iterator it=m_tests.begin(); it!=m_tests.end(); ++it) {
 	VlcTest* testp = *it;
 	if (testp->bucketsCovered()) {	 // else no points, so can't help us
@@ -122,7 +121,7 @@ void VlcTop::rank() {
 	if (debug()) { UINFO(9,"Left on iter"<<nextrank<<": "); remaining.dump(); }
 	VlcTest* bestTestp = NULL;
 	vluint64_t bestRemain = 0;
-	for (vector<VlcTest*>::iterator it=bytime.begin(); it!=bytime.end(); ++it) {
+        for (std::vector<VlcTest*>::iterator it=bytime.begin(); it!=bytime.end(); ++it) {
 	    VlcTest* testp = *it;
 	    if (!testp->rank()) {
 		vluint64_t remain = testp->buckets().dataPopCount(remaining);
@@ -150,11 +149,11 @@ void VlcTop::annotateCalc() {
 	const VlcPoint& point = m_points.pointNumber(it->second);
 	string filename = point.filename();
 	int lineno = point.lineno();
-	if (filename!="" && lineno!=0) {
+        if (!filename.empty() && lineno!=0) {
 	    int column = point.column();
 	    VlcSource& source = sources().findNewSource(filename);
 	    string threshStr = point.thresh();
-	    unsigned thresh = (threshStr!="") ? atoi(threshStr.c_str()) : opt.annotateMin();
+            unsigned thresh = (!threshStr.empty()) ? atoi(threshStr.c_str()) : opt.annotateMin();
 	    bool ok = (point.count() >= thresh);
 	    UINFO(9, "AnnoCalc count "<<filename<<" "<<lineno<<" "<<point.count()<<endl);
 	    source.incCount(lineno, column, point.count(), ok);
@@ -188,7 +187,7 @@ void VlcTop::annotateCalcNeeded() {
     }
     float pct = totCases ? (100*totOk / totCases) : 0;
     cout<<"Total coverage ("<<totOk<<"/"<<totCases<<") "
-	<<fixed<<setw(3)<<setprecision(2)<<pct<<"%"<<endl;
+        <<std::fixed<<std::setw(3)<<std::setprecision(2)<<pct<<"%"<<endl;
     if (totOk != totCases) cout<<"See lines with '%00' in "<<opt.annotateOut()<<endl;
 }
 
@@ -203,13 +202,13 @@ void VlcTop::annotateOutputFiles(const string& dirname) {
 
 	UINFO(1,"annotateOutputFile "<<filename<<" -> "<<outfilename<<endl);
 
-	ifstream is (filename.c_str());
+        std::ifstream is(filename.c_str());
 	if (!is) {
 	    v3error("Can't read "<<filename);
 	    return;
 	}
-	
-	ofstream os (outfilename.c_str());
+
+        std::ofstream os(outfilename.c_str());
 	if (!os) {
 	    v3fatal("Can't write "<<outfilename);
 	    return;
@@ -219,9 +218,8 @@ void VlcTop::annotateOutputFiles(const string& dirname) {
 
 	int lineno = 0;
 	while (!is.eof()) {
-	    lineno++;
-	    string line;
-	    getline(is, line);
+            lineno++;
+            string line = V3Os::getline(is);
 
 	    bool first = true;
 
@@ -233,12 +231,12 @@ void VlcTop::annotateOutputFiles(const string& dirname) {
 		    VlcSourceCount& col = cit->second;
 		    //UINFO(0,"Source "<<source.name()<<" lineno="<<col.lineno()<<" col="<<col.column()<<endl);
 		    os<<(col.ok()?" ":"%")
-		      <<setfill('0')<<setw(6)<<col.count()
+                      <<std::setfill('0')<<std::setw(6)<<col.count()
 		      <<"\t"<<line<<endl;
 		    if (first) {
 			first = false;
 			// Multiple columns on same line; print line just once
-			string indent = "";
+                        string indent;
 			for (string::const_iterator pos=line.begin(); pos!=line.end() && isspace(*pos); ++pos) {
 			    indent += *pos;
 			}

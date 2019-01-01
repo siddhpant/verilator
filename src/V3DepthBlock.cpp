@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -26,15 +26,14 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
 
 #include "V3Global.h"
 #include "V3DepthBlock.h"
 #include "V3Ast.h"
 #include "V3EmitCBase.h"
+
+#include <algorithm>
+#include <cstdarg>
 
 //######################################################################
 
@@ -49,11 +48,7 @@ private:
     int			m_deepNum;	// How many functions made
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     AstCFunc* createDeepFunc(AstNode* nodep) {
 	AstNRelinker relinkHandle;
@@ -80,7 +75,7 @@ private:
 	UINFO(4," MOD   "<<nodep<<endl);
 	m_modp = nodep;
 	m_deepNum = 0;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     virtual void visit(AstCFunc* nodep) {
@@ -90,7 +85,7 @@ private:
 	{
 	    m_depth = 0;
 	    m_funcp = nodep;
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
 	m_depth = lastDepth;
 	m_funcp = lastFuncp;
@@ -98,16 +93,16 @@ private:
     void visitStmt(AstNodeStmt* nodep) {
 	m_depth++;
 	if (m_depth > v3Global.opt.compLimitBlocks()
-	    && !nodep->castCCall()) {   // Already done
+            && !VN_IS(nodep, CCall)) {  // Already done
 	    UINFO(4, "DeepBlocks "<<m_depth<<" "<<nodep<<endl);
 	    AstNode* backp = nodep->backp();  // Only for debug
 	    if (debug()>=9) backp->dumpTree(cout,"-   pre : ");
 	    AstCFunc* funcp = createDeepFunc(nodep);
-	    funcp->accept(*this);
+            iterate(funcp);
 	    if (debug()>=9) backp->dumpTree(cout,"-   post: ");
 	    if (debug()>=9) funcp->dumpTree(cout,"-   func: ");
 	} else {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
 	m_depth--;
     }
@@ -120,16 +115,18 @@ private:
     // Default: Just iterate
     virtual void visit(AstVar* nodep) {}	// Don't hit varrefs under vars
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
     // CONSTUCTORS
     explicit DepthBlockVisitor(AstNetlist* nodep) {
-	m_modp=NULL;
-	m_depth=0;
+        m_modp = NULL;
+        m_funcp = NULL;
+        m_depth = 0;
+        m_deepNum = 0;
 	//
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~DepthBlockVisitor() {}
 };
@@ -139,6 +136,8 @@ public:
 
 void V3DepthBlock::depthBlockAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DepthBlockVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("deepblock.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        DepthBlockVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("deepblock", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,25 +20,26 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdarg>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <dirent.h>
-#include <unistd.h>
-#include <climits>
-#include <cstdlib>
+
+#include "V3Global.h"
+#include "V3String.h"
+#include "V3Os.h"
+
 #include <cerrno>
+#include <climits>
+#include <cstdarg>
+#include <dirent.h>
 #include <fcntl.h>
 #include <iomanip>
 #include <memory>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
 
 #if defined(WIN32) || defined(__MINGW32__)
 # include <direct.h>  // mkdir
 #endif
 
-#include "V3Global.h"
-#include "V3String.h"
-#include "V3Os.h"
 
 //######################################################################
 // Environment
@@ -68,42 +69,42 @@ void V3Os::setenvStr(const string& envvar, const string& value, const string& wh
 }
 
 //######################################################################
-// Generic filename utilities 
+// Generic filename utilities
 
-string V3Os::filenameFromDirBase (const string& dir, const string& basename) {
+string V3Os::filenameFromDirBase(const string& dir, const string& basename) {
     // Don't return ./{filename} because if filename was absolute, that makes it relative
     if (dir == ".") return basename;
     else return dir+"/"+basename;
 }
 
-string V3Os::filenameDir (const string& filename) {
+string V3Os::filenameDir(const string& filename) {
     string::size_type pos;
-    if ((pos = filename.rfind("/")) != string::npos) {
+    if ((pos = filename.rfind('/')) != string::npos) {
 	return filename.substr(0,pos);
     } else {
 	return ".";
     }
 }
 
-string V3Os::filenameNonDir (const string& filename) {
+string V3Os::filenameNonDir(const string& filename) {
     string::size_type pos;
-    if ((pos = filename.rfind("/")) != string::npos) {
+    if ((pos = filename.rfind('/')) != string::npos) {
 	return filename.substr(pos+1);
     } else {
 	return filename;
     }
 }
 
-string V3Os::filenameNonExt (const string& filename) {
+string V3Os::filenameNonExt(const string& filename) {
     string base = filenameNonDir(filename);
     string::size_type pos;
-    if ((pos = base.find(".")) != string::npos) {
+    if ((pos = base.find('.')) != string::npos) {
 	base.erase(pos);
     }
     return base;
 }
 
-string V3Os::filenameSubstitute (const string& filename) {
+string V3Os::filenameSubstitute(const string& filename) {
     string out;
     enum { NONE, PAREN, CURLY } brackets = NONE;
     for (string::size_type pos = 0; pos < filename.length(); ++pos) {
@@ -165,6 +166,21 @@ bool V3Os::filenameIsRel(const string& filename) {
 }
 
 //######################################################################
+// File utilities
+
+string V3Os::getline(std::istream& is, char delim) {
+    string line;
+#if defined(__CYGWIN__)  // Work around buggy implementation of getline
+    char buf[65536];
+    is.getline(buf, 65535, delim);
+    line = buf;
+#else
+    std::getline(is, line, delim);
+#endif
+    return line;
+}
+
+//######################################################################
 // Directory utilities
 
 void V3Os::createDir(const string& dirname) {
@@ -180,9 +196,58 @@ void V3Os::unlinkRegexp(const string& dir, const string& regexp) {
 	while (struct dirent* direntp = readdir(dirp)) {
 	    if (VString::wildmatch(direntp->d_name, regexp.c_str())) {
 		string fullname = dir + "/" + string(direntp->d_name);
-		unlink (fullname.c_str());
+                unlink(fullname.c_str());
 	    }
 	}
 	closedir(dirp);
     }
+}
+
+//######################################################################
+// METHODS (random)
+
+vluint64_t V3Os::rand64(vluint64_t* statep) {
+    // Xoroshiro128+ algorithm
+    vluint64_t result = statep[0] + statep[1];
+    statep[1] ^= statep[0];
+    statep[0] = (((statep[0] << 55) | (statep[0] >> 9))
+                 ^ statep[1] ^ (statep[1] << 14));
+    statep[1] = (statep[1] << 36) | (statep[1] >> 28);
+    return result;
+}
+
+//######################################################################
+// METHODS (performance)
+
+uint64_t V3Os::timeUsecs() {
+#if defined(_WIN32) || defined(__MINGW32__)
+    return 0;
+#else
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
+    timeval tv;
+    if (gettimeofday(&tv, NULL) < 0) return 0;
+    return static_cast<uint64_t>(tv.tv_sec)*1000000 + tv.tv_usec;
+#endif
+}
+
+uint64_t V3Os::memUsageBytes() {
+#if defined(_WIN32) || defined(__MINGW32__)
+    return 0;
+#else
+    // Highly unportable. Sorry
+    const char* const statmFilename = "/proc/self/statm";
+    FILE* fp = fopen(statmFilename,"r");
+    if (!fp) {
+	return 0;
+    }
+    vluint64_t size, resident, share, text, lib, data, dt;  // All in pages
+    if (7 != fscanf(fp, "%" VL_PRI64 "u %" VL_PRI64 "u %" VL_PRI64 "u %"
+                    VL_PRI64 "u %" VL_PRI64 "u %" VL_PRI64 "u %" VL_PRI64 "u",
+		    &size, &resident, &share, &text, &lib, &data, &dt)) {
+	fclose(fp);
+	return 0;
+    }
+    fclose(fp);
+    return (text + data) * getpagesize();
+#endif
 }

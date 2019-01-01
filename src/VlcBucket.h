@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -43,9 +43,10 @@ private:
 	vluint64_t oldsize = m_dataSize;
 	if (m_dataSize<point) m_dataSize=(point+64) & ~63ULL;  // Keep power of two
 	m_dataSize *= 2;
-	//UINFO(9, "Realloc "<<allocSize()<<" for "<<point<<"  "<<(void*)(m_datap)<<endl);
-	m_datap = (vluint64_t*)realloc(m_datap, allocSize());
-	if (!m_datap) {v3fatal("Out of memory increasing buckets"); }
+        //UINFO(9, "Realloc "<<allocSize()<<" for "<<point<<"  "<<cvtToHex(m_datap)<<endl);
+	vluint64_t* newp = (vluint64_t*)realloc(m_datap, allocSize());
+	if (!newp) { free(m_datap); v3fatal("Out of memory increasing buckets"); }
+	m_datap = newp;
 	for (vluint64_t i=oldsize; i<m_dataSize; i+=64) m_datap[i/64] = 0;
     }
 

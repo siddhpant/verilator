@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -31,16 +31,15 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
-#include <vector>
 
 #include "V3Global.h"
 #include "V3Begin.h"
 #include "V3Inst.h"
 #include "V3Ast.h"
+
+#include <algorithm>
+#include <cstdarg>
+#include <vector>
 
 //######################################################################
 
@@ -77,17 +76,13 @@ private:
     int			m_ifDepth;	// Current if depth
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     // VISITORS
     virtual void visit(AstNodeModule* nodep) {
 	m_modp = nodep;
 	m_repeatNum = 0;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     virtual void visit(AstNodeFTask* nodep) {
@@ -107,7 +102,7 @@ private:
 	    m_namedScope = "";
 	    m_unnamedScope = "";
 	    m_ftaskp = nodep;
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    m_ftaskp = NULL;
 	}
 	m_namedScope = oldScope;
@@ -143,7 +138,7 @@ private:
 	    }
 
 	    // Remap var names and replace lower Begins
-	    nodep->stmtsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->stmtsp());
 	    if (nodep->genforp()) nodep->v3fatalSrc("GENFORs should have been expanded earlier");
 	}
 	m_namedScope = oldScope;
@@ -184,7 +179,7 @@ private:
 	    nodep->unlinkFrBack();
 	    m_modp->addStmtp(nodep);
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstVarXRef* nodep) {
 	UINFO(9, "   VARXREF "<<nodep<<endl);
@@ -201,15 +196,15 @@ private:
 	    // To keep correct visual order, must add before other Text's
 	    AstNode* afterp = nodep->scopeAttrp();
 	    if (afterp) afterp->unlinkFrBackWithNext();
-	    nodep->scopeAttrp(new AstText(nodep->fileline(), (string)"__DOT__"+m_namedScope));
+            nodep->scopeAttrp(new AstText(nodep->fileline(), string("__DOT__")+m_namedScope));
 	    if (afterp) nodep->scopeAttrp(afterp);
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstCoverDecl* nodep) {
 	// Don't need to fix path in coverage statements, they're not under
 	// any BEGINs, but V3Coverage adds them all under the module itself.
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     // VISITORS - LINT CHECK
     virtual void visit(AstIf* nodep) { // Note not AstNodeIf; other types don't get covered
@@ -223,11 +218,11 @@ private:
 	    nodep->fileline()->modifyWarnOff(V3ErrorCode::IFDEPTH, true);  // Warn only once
 	    m_ifDepth = -1;
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_ifDepth = prevIfDepth;
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
@@ -237,7 +232,7 @@ public:
 	m_ftaskp = NULL;
 	m_repeatNum = 0;
 	m_ifDepth = 0;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~BeginVisitor() {}
 };
@@ -257,14 +252,14 @@ private:
 	    UINFO(9, "    relinkFTask "<<nodep<<endl);
 	    nodep->name(nodep->taskp()->name());
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstVarRef* nodep) {
 	if (nodep->varp()->user1()) { // It was converted
 	    UINFO(9, "    relinVarRef "<<nodep<<endl);
 	    nodep->name(nodep->varp()->name());
 	}
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstIfaceRefDType* nodep) {
 	// May have changed cell names
@@ -272,16 +267,16 @@ private:
 	UINFO(8,"   IFACEREFDTYPE "<<nodep<<endl);
 	if (nodep->cellp()) nodep->cellName(nodep->cellp()->name());
 	UINFO(8,"       rename to "<<nodep<<endl);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     //--------------------
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
     BeginRelinkVisitor(AstNetlist* nodep, BeginState*) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~BeginRelinkVisitor() {}
 };
@@ -291,10 +286,12 @@ public:
 
 void V3Begin::debeginAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    BeginState state;
-    { BeginVisitor bvisitor (nodep,&state); }
-    if (state.anyFuncInBegin()) {
-	BeginRelinkVisitor brvisitor (nodep,&state);
-    }
-    V3Global::dumpCheckGlobalTree("begin.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        BeginState state;
+        { BeginVisitor bvisitor (nodep,&state); }
+        if (state.anyFuncInBegin()) {
+            BeginRelinkVisitor brvisitor (nodep,&state);
+        }
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("begin", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

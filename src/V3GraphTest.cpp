@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,13 +20,12 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
 
 #include "V3Global.h"
 #include "V3Graph.h"
 #include "V3GraphDfa.h"
+
+#include <cstdarg>
 
 //######################################################################
 //######################################################################
@@ -72,17 +71,17 @@ public:
 class V3GraphTestVertex : public V3GraphVertex {
     string	m_name;
 public:
-    V3GraphTestVertex(V3Graph* graphp, string name) : V3GraphVertex(graphp), m_name(name) {}
+    V3GraphTestVertex(V3Graph* graphp, const string& name) : V3GraphVertex(graphp), m_name(name) {}
     virtual ~V3GraphTestVertex() {}
-    // Accessors
+    // ACCESSORS
     virtual string name() const { return m_name; }
 };
 
 class V3GraphTestVarVertex : public V3GraphTestVertex {
 public:
-    V3GraphTestVarVertex(V3Graph* graphp, string name) : V3GraphTestVertex(graphp, name) {}
+    V3GraphTestVarVertex(V3Graph* graphp, const string& name) : V3GraphTestVertex(graphp, name) {}
     virtual ~V3GraphTestVarVertex() {}
-    // Accessors
+    // ACCESSORS
     virtual string dotColor() const { return "blue"; }
 };
 
@@ -119,9 +118,12 @@ public:
 	gp->stronglyConnected(&V3GraphEdge::followAlwaysTrue);
 	dump();
 
-	UASSERT(i->color()!=a->color() && a->color() != g2->color() && g2->color() != q->color(), "Separate colors not assigned");
-	UASSERT(a->color()==b->color() && a->color()==g1->color(), "Strongly connected nodes not colored together");
-	UASSERT(g2->color()==g3->color(), "Strongly connected nodes not colored together");
+        UASSERT(i->color()!=a->color() && a->color() != g2->color() && g2->color() != q->color(),
+                "SelfTest: Separate colors not assigned");
+        UASSERT(a->color()==b->color() && a->color()==g1->color(),
+                "SelfTest: Strongly connected nodes not colored together");
+        UASSERT(g2->color()==g3->color(),
+                "SelfTest: Strongly connected nodes not colored together");
     }
 };
 
@@ -251,7 +253,7 @@ public:
 	// Outbound are cutable, as we may need to evaluate multiple times
 
 	{
-	    V3GraphTestVertex* n	= new V3GraphTestVertex(gp,"c=a|b|i");
+	    n = new V3GraphTestVertex(gp,"c=a|b|i");
 	    new V3GraphEdge(gp, n, c, 1, true);
 	    new V3GraphEdge(gp, a, n, 1, false);
 	    new V3GraphEdge(gp, b, n, 1, false);
@@ -270,9 +272,9 @@ public:
 class DfaTestVertex : public DfaVertex {
     string	m_name;
 public:
-    DfaTestVertex(DfaGraph* graphp, string name) : DfaVertex(graphp), m_name(name) {}
+    DfaTestVertex(DfaGraph* graphp, const string& name) : DfaVertex(graphp), m_name(name) {}
     virtual ~DfaTestVertex() {}
-    // Accessors
+    // ACCESSORS
     virtual string name() const { return m_name; }
 };
 
@@ -332,7 +334,7 @@ public:
     virtual string name() { return "import"; }
     virtual void runTest() {
 	DfaGraph* gp = &m_graph;
-	if (V3GraphTest::debug()) gp->debug(9);
+        if (V3GraphTest::debug()) DfaGraph::debug(9);
 	dotImport();
 	dump();
 	gp->acyclic(&V3GraphEdge::followAlwaysTrue);
@@ -351,7 +353,7 @@ void V3GraphTestImport::dotImport() {
 
 //======================================================================
 
-void V3Graph::test() {
+void V3Graph::selfTest() {
     // Execute all of the tests
     UINFO(2,__FUNCTION__<<": "<<endl);
     { V3GraphTestStrong test; test.run(); }

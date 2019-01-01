@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,10 +20,12 @@
 
 #ifndef _V3FILE_H_
 #define _V3FILE_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include "V3Error.h"
-#include <cstdio>
+
 #include <stack>
 #include <set>
 #include <list>
@@ -34,23 +36,23 @@
 
 class V3File {
 public:
-    static ifstream* new_ifstream(const string& filename) {
+    static std::ifstream* new_ifstream(const string& filename) {
 	addSrcDepend(filename);
-	return new_ifstream_nodepend (filename);
+        return new_ifstream_nodepend(filename);
     }
-    static ifstream* new_ifstream_nodepend(const string& filename) {
-	return new ifstream(filename.c_str());
+    static std::ifstream* new_ifstream_nodepend(const string& filename) {
+        return new std::ifstream(filename.c_str());
     }
-    static ofstream* new_ofstream(const string& filename, bool append=false) {
+    static std::ofstream* new_ofstream(const string& filename, bool append=false) {
 	addTgtDepend(filename);
-	return new_ofstream_nodepend (filename, append);
+        return new_ofstream_nodepend(filename, append);
     }
-    static ofstream* new_ofstream_nodepend(const string& filename, bool append=false) {
+    static std::ofstream* new_ofstream_nodepend(const string& filename, bool append=false) {
 	if (filename != VL_DEV_NULL) createMakeDir();
 	if (append) {
-	    return new ofstream(filename.c_str(), ios::app);
+            return new std::ofstream(filename.c_str(), std::ios::app);
 	} else {
-	    return new ofstream(filename.c_str());
+            return new std::ofstream(filename.c_str());
 	}
     }
     static FILE* new_fopen_w(const string& filename) {
@@ -63,8 +65,8 @@ public:
     static void addSrcDepend(const string& filename);
     static void addTgtDepend(const string& filename);
     static void writeDepend(const string& filename);
-    static void writeTimes(const string& filename, const string& cmdline);
-    static bool checkTimes(const string& filename, const string& cmdline);
+    static void writeTimes(const string& filename, const string& cmdlineIn);
+    static bool checkTimes(const string& filename, const string& cmdlineIn);
 
     // Directory utilities
     static void createMakeDir();
@@ -76,19 +78,22 @@ public:
 class V3InFilterImp;
 
 class V3InFilter {
-    V3InFilterImp* m_impp;
-    V3InFilter(const V3InFilter&); ///< N/A, no copy constructor
 public:
     // TYPES
-    typedef list<string> StrList;
+    typedef std::list<string> StrList;
+
+private:
+    V3InFilterImp* m_impp;
+
+    // CONSTRUCTORS
+    VL_UNCOPYABLE(V3InFilter);
+public:
+    explicit V3InFilter(const string& command);
+    ~V3InFilter();
 
     // METHODS
     // Read file contents and return it.  Return true on success.
     bool readWholefile(const string& filename, StrList& outl);
-
-    // CONSTRUCTORS
-    explicit V3InFilter(const string& command);
-    ~V3InFilter();
 };
 
 //============================================================================
@@ -120,13 +125,11 @@ private:
     int		m_nobreak;	// Basic operator or begin paren, don't break next
     bool	m_prependIndent;
     int		m_indentLevel;	// Current {} indentation
-    int		m_declSAlign;	// Byte alignment of next declaration, statics
-    int		m_declNSAlign;	// Byte alignment of next declaration, nonstatics
-    int		m_declPadNum;	// Pad variable number
-    stack<int>	m_parenVec;	// Stack of columns where last ( was
+    std::stack<int> m_parenVec;  // Stack of columns where last ( was
+    int         m_bracketLevel;  // Intenting = { block, indicates number of {'s seen.
 
     int		endLevels(const char* strg);
-    const char* indentStr(int levels);
+    const char* indentStr(int num);
     void putcNoTracking(char chr);
 
 public:
@@ -144,7 +147,6 @@ public:
     void putsQuoted(const string& strg);
     void putBreak();  // Print linebreak if line is too wide
     void putBreakExpr();  // Print linebreak in expression if line is too wide
-    void putAlign(bool isstatic/*AlignClass*/, int align, int size=0/*=align*/, const string& prefix=""); // Declare a variable, with natural alignment
     void putbs(const char* strg) { putBreakExpr(); puts(strg); }
     void putbs(const string& strg) {  putBreakExpr(); puts(strg); }
     bool exceededWidth() const { return m_column > m_commaWidth; }
@@ -153,12 +155,12 @@ public:
     void indentInc() { m_indentLevel += m_blockIndent; }
     void indentDec() {
 	m_indentLevel -= m_blockIndent;
-	UASSERT(m_indentLevel>=0, ": "<<m_filename<<": Underflow of indentation\n");
+        UASSERT(m_indentLevel>=0, ": "<<m_filename<<": Underflow of indentation");
     }
     void blockInc() { m_parenVec.push(m_indentLevel + m_blockIndent); }
     void blockDec() { if (!m_parenVec.empty()) m_parenVec.pop(); }
     // STATIC METHODS
-    static const string indentSpaces(int levels);
+    static const string indentSpaces(int num);
 
     // CALLBACKS - MUST OVERRIDE
     virtual void putcOutput(char chr) = 0;
@@ -218,18 +220,6 @@ public:
     virtual void putsIntTopInclude() {
 	putsForceIncs();
 	puts("#include \"systemc.h\"\n");
-	puts("#include \"verilated_sc.h\"\n");
-    }
-};
-
-class V3OutSpFile : public V3OutCFile {
-public:
-    explicit V3OutSpFile(const string& filename) : V3OutCFile(filename) {}
-    virtual ~V3OutSpFile() {}
-    virtual void putsHeader() { puts("// Verilated -*- SystemC -*-\n"); }
-    virtual void putsIntTopInclude() {
-	putsForceIncs();
-	puts("#include \"systemperl.h\"\n");
 	puts("#include \"verilated_sc.h\"\n");
     }
 };

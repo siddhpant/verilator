@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2004-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -43,14 +43,13 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
 
 #include "V3Global.h"
 #include "V3Cast.h"
 #include "V3Ast.h"
+
+#include <algorithm>
+#include <cstdarg>
 
 //######################################################################
 // Cast state, as a visitor of each AstNode
@@ -65,25 +64,21 @@ private:
     // STATE
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void insertCast(AstNode* nodep, int needsize) {  // We'll insert ABOVE passed node
 	UINFO(4,"  NeedCast "<<nodep<<endl);
 	AstNRelinker relinkHandle;
 	nodep->unlinkFrBack(&relinkHandle);
 	//
-	AstCCast* castp = new AstCCast (nodep->fileline(), nodep, needsize, nodep->widthMin());
+        AstCCast* castp = new AstCCast(nodep->fileline(), nodep, needsize, nodep->widthMin());
 	relinkHandle.relink(castp);
 	//if (debug()>8) castp->dumpTree(cout,"-castins: ");
 	//
 	insureLower32Cast(castp);
 	nodep->user1(1);  // Now must be of known size
     }
-    int castSize (AstNode* nodep) {
+    int castSize(AstNode* nodep) {
 	if (nodep->isQuad()) return VL_QUADSIZE;
 	else if (nodep->width()<=8) return 8;
 	else if (nodep->width()<=16) return 16;
@@ -101,26 +96,26 @@ private:
 	// Otherwise a (uint64)(a>b) would return wrong value, as
 	// less than has undeterministic signedness.
 	if (nodep->isQuad() && !nodep->lhsp()->isQuad()
-	    && !nodep->lhsp()->castCCast()) {
+            && !VN_IS(nodep->lhsp(), CCast)) {
 	    insertCast(nodep->lhsp(), VL_WORDSIZE);
 	}
     }
 
     // VISITORS
     virtual void visit(AstNodeUniop* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	nodep->user1(nodep->lhsp()->user1());
 	if (nodep->sizeMattersLhs()) insureCast(nodep->lhsp());
     }
     virtual void visit(AstNodeBiop* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	nodep->user1(nodep->lhsp()->user1()
 		    | nodep->rhsp()->user1());
 	if (nodep->sizeMattersLhs()) insureCast(nodep->lhsp());
 	if (nodep->sizeMattersRhs()) insureCast(nodep->rhsp());
     }
     virtual void visit(AstNodeTriop* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	nodep->user1(nodep->lhsp()->user1()
 		    | nodep->rhsp()->user1()
 		    | nodep->thsp()->user1());
@@ -129,12 +124,12 @@ private:
 	if (nodep->sizeMattersThs()) insureCast(nodep->thsp());
     }
     virtual void visit(AstCCast* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	insureLower32Cast(nodep);
 	nodep->user1(1);
     }
     virtual void visit(AstNegate* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	nodep->user1(nodep->lhsp()->user1());
 	if (nodep->lhsp()->widthMin()==1) {
 	    // We want to avoid a GCC "converting of negative value" warning
@@ -147,14 +142,14 @@ private:
     }
     virtual void visit(AstVarRef* nodep) {
 	if (!nodep->lvalue()
-	    && !nodep->backp()->castCCast()
-	    && nodep->backp()->castNodeMath()
-	    && !nodep->backp()->castArraySel()
+            && !VN_IS(nodep->backp(), CCast)
+            && VN_IS(nodep->backp(), NodeMath)
+            && !VN_IS(nodep->backp(), ArraySel)
 	    && nodep->backp()->width()
 	    && castSize(nodep) != castSize(nodep->varp())) {
 	    // Cast vars to IData first, else below has upper bits wrongly set
 	    //  CData x=3;  out = (QData)(x<<30);
-	    insertCast (nodep, castSize(nodep));
+            insertCast(nodep, castSize(nodep));
 	}
 	nodep->user1(1);
     }
@@ -171,13 +166,13 @@ private:
     //--------------------
     // Default: Just iterate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
     // CONSTUCTORS
     explicit CastVisitor(AstNetlist* nodep) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~CastVisitor() {}
 };
@@ -187,6 +182,8 @@ public:
 
 void V3Cast::castAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    CastVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("cast.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        CastVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("cast", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

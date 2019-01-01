@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2008-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2008-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -33,12 +33,6 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <map>
-#include <algorithm>
-#include <vector>
 
 #include "V3Global.h"
 #include "V3Ast.h"
@@ -46,16 +40,17 @@
 #include "V3Graph.h"
 #include "V3ClkGater.h"
 
+#include <algorithm>
+#include <cstdarg>
+#include <map>
+#include <vector>
+
 //######################################################################
 // Base for debug
 
 class GaterBaseVisitor : public AstNVisitor {
 protected:
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //######################################################################
@@ -105,7 +100,8 @@ public:
 	: GaterVertex(graphp), m_nodep(nodep) { }
     virtual ~GaterIfVertex() {}
     virtual int typeNum() const { return __LINE__; }  // C++ typeof() equivelent
-    virtual string name() const { return cvtToStr((void*)m_nodep)+" {"+cvtToStr(m_nodep->fileline()->lineno())+"}"; }
+    virtual string name() const {
+        return cvtToHex(m_nodep)+" {"+cvtToStr(m_nodep->fileline()->lineno())+"}"; }
 };
 
 class GaterVarVertex : public GaterVertex {
@@ -196,7 +192,7 @@ private:
     bool		m_isSimple;	// Set false when we know it isn't simple
     // METHODS
     inline void okIterate(AstNode* nodep) {
-	if (m_isSimple) nodep->iterateChildren(*this);
+        if (m_isSimple) iterateChildren(nodep);
     }
     // VISITORS
     virtual void visit(AstOr* nodep) {	okIterate(nodep); }
@@ -213,13 +209,13 @@ private:
 
     virtual void visit(AstNode* nodep) {
 	m_isSimple = false;
-	//nodep->iterateChildren(*this);
+        //iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
     explicit GaterCondVisitor(AstNode* nodep) {
 	m_isSimple = true;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~GaterCondVisitor() {}
     // PUBLIC METHODS
@@ -283,7 +279,7 @@ class GaterBodyVisitor : public GaterBaseVisitor {
 	uint32_t childstate;
 	{
 	    m_state = STATE_UNKNOWN;
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    childstate = m_state;
 	}
 	m_state = oldstate;
@@ -305,7 +301,7 @@ class GaterBodyVisitor : public GaterBaseVisitor {
 	}
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
@@ -315,7 +311,7 @@ public:
 	m_state = STATE_UNKNOWN;
 	m_cloning = false;
 	if (debug()>=9) nodep->dumpTree(cout,"  GateBodyIn:  ");
-	nodep->bodysp()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->bodysp());
 	if (debug()>=9) nodep->dumpTree(cout,"  GateBodyOut: ");
 	// If there's no statements we shouldn't have had a resulting graph
 	// vertex asking for this creation
@@ -373,14 +369,14 @@ class GaterVisitor : public GaterBaseVisitor {
     }
     void scoreboardPli(AstNode* nodep) {
 	// Order all PLI statements with other PLI statements
-	// This insures $display's and such remain in proper order
+	// This ensures $display's and such remain in proper order
 	// We don't prevent splitting out other non-pli statements, however,
 	// because it is common to have $uasserts sprinkled about.
 	if (!m_pliVertexp) {
 	    m_pliVertexp = new GaterPliVertex(&m_graph);
 	}
 	if (m_stmtVscp) {  // Already saw a variable, be sure to mark it!
-	    GaterVarVertex* varVtxp = (GaterVarVertex*)(m_stmtVscp->user1p());
+            GaterVarVertex* varVtxp = reinterpret_cast<GaterVarVertex*>(m_stmtVscp->user1p());
 	    new GaterEdge(&m_graph, m_pliVertexp, varVtxp, VU_PLI);
 	}
 	m_stmtInPli = true;  // Mark all followon variables too
@@ -587,9 +583,9 @@ class GaterVisitor : public GaterBaseVisitor {
     }
     void nafgMarkRecurse(V3GraphVertex* vertexp, uint32_t generation) {
 	// Backwards mark user() on the path we recurse
-	//UINFO(9," nafgMark: v "<<(void*)(vertexp)<<" "<<vertexp->name()<<endl);
+        //UINFO(9," nafgMark: v "<<cvtToHex(vertexp)<<" "<<vertexp->name()<<endl);
 	for (V3GraphEdge* edgep = vertexp->inBeginp(); edgep; edgep = edgep->inNextp()) {
-	    //UINFO(9," nafgMark: "<<(void*)(edgep)<<" "<<edgep->name()<<endl);
+            //UINFO(9," nafgMark: "<<cvtToHex(edgep)<<" "<<edgep->name()<<endl);
 	    edgep->user(generation);
 	    nafgMarkRecurse(edgep->fromp(), generation);
 	}
@@ -598,20 +594,21 @@ class GaterVisitor : public GaterBaseVisitor {
 	// Forewards follow user() marked previously and build tree
 	AstNode* nodep = NULL;
 	// OR across all edges found at this level
-	//UINFO(9," nafgEnter: v "<<(void*)(vertexp)<<" "<<vertexp->name()<<endl);
+        //UINFO(9," nafgEnter: v "<<cvtToHex(vertexp)<<" "<<vertexp->name()<<endl);
 	for (V3GraphEdge* edgep = vertexp->outBeginp(); edgep; edgep = edgep->outNextp()) {
 	    if (edgep->user() == generation) {
 		GaterEdge* cedgep = static_cast<GaterEdge*>(edgep);
 		AstNode* eqnp = NULL;
-		//UINFO(9," nafgFollow: "<<(void*)(edgep)<<" "<<edgep->name()<<endl);
+                //UINFO(9," nafgFollow: "<<cvtToHex(edgep)<<" "<<edgep->name()<<endl);
 		if (dynamic_cast<GaterHeadVertex*>(edgep->fromp())) {
 		    // Just OR in all lower terms
 		    eqnp = nafgCreateRecurse(edgep->top(), generation);
 		} else if (GaterIfVertex* cVxp = dynamic_cast<GaterIfVertex*>(edgep->fromp())) {
 		    // Edges from IFs represent a real IF branch in the equation tree
-		    //UINFO(9,"  ifver "<<(void*)(edgep)<<" cc"<<edgep->dotColor()<<endl);
+                    //UINFO(9,"  ifver "<<cvtToHex(edgep)<<" cc"<<edgep->dotColor()<<endl);
 		    eqnp = cVxp->nodep()->condp()->cloneTree(true);
-		    if (eqnp && cedgep->ifelseFalse()) {
+		    if (!eqnp) cVxp->nodep()->v3fatalSrc("null condition");
+		    if (cedgep->ifelseFalse()) {
 			eqnp = new AstNot(eqnp->fileline(),eqnp);
 		    }
 		    // We need to AND this term onto whatever was found below it
@@ -620,12 +617,12 @@ class GaterVisitor : public GaterBaseVisitor {
 		}
 		// Top level we could choose to make multiple gaters, or ORs under the gater
 		// Right now we'll put OR lower down and let other optimizations deal
-		if (nodep) nodep = new AstOr(eqnp->fileline(),nodep,eqnp);
+		if (nodep) nodep = new AstOr(nodep->fileline(), nodep, eqnp);
 		else nodep = eqnp;
 		//if (debug()>=9) nodep->dumpTree(cout,"      followExpr: ");
 	    }
 	}
-	//UINFO(9," nafgExit:  "<<(void*)(vertexp)<<" "<<vertexp->name()<<endl);
+        //UINFO(9," nafgExit:  "<<cvtToHex(vertexp)<<" "<<vertexp->name()<<endl);
 	return nodep;
     }
 
@@ -671,7 +668,7 @@ class GaterVisitor : public GaterBaseVisitor {
 	AstSenTree* sensesp = nodep->sensesp()->cloneTree(true);
 #else
 	// Make a SenGate
-	AstSenItem* oldsenitemsp = nodep->sensesp()->sensesp()->castSenItem();
+        AstSenItem* oldsenitemsp = VN_CAST(nodep->sensesp()->sensesp(), SenItem);
 	if (!oldsenitemsp) nodep->v3fatalSrc("SenTree doesn't have any SenItem under it");
 
 	AstSenTree* sensesp = new AstSenTree(nodep->fileline(),
@@ -692,9 +689,9 @@ class GaterVisitor : public GaterBaseVisitor {
 	nodep->addNextHere(alwp);
 
 	// Blow moved statements from old body
-	GaterBodyVisitor(nodep,exprp,true);
+        { GaterBodyVisitor vis(nodep,exprp,true); }
 	// Blow old statements from new body
-	GaterBodyVisitor(alwp,exprp,false);
+        { GaterBodyVisitor vis(alwp,exprp,false); }
 
 	++m_statGaters;
 	if (debug()>=9) alwp->dumpTree(cout,"  new: ");
@@ -767,7 +764,7 @@ class GaterVisitor : public GaterBaseVisitor {
 	    }
 	    m_stmtVscp = vscp;
 	    // Find, or make new Vertex
-	    GaterVarVertex* vertexp = (GaterVarVertex*)(vscp->user1p());
+            GaterVarVertex* vertexp = reinterpret_cast<GaterVarVertex*>(vscp->user1p());
 	    if (!vertexp) {
 		vertexp = new GaterVarVertex(&m_graph, vscp);
 		vscp->user1p(vertexp);
@@ -801,17 +798,17 @@ class GaterVisitor : public GaterBaseVisitor {
 	    GaterIfVertex* vertexp = new GaterIfVertex(&m_graph, nodep);
 	    new GaterEdge(&m_graph, m_aboveVertexp, vertexp, m_aboveTrue);
 	    {
-		nodep->condp()->iterateAndNext(*this);  // directlyUnder stays as-is
+                iterateAndNextNull(nodep->condp());  // directlyUnder stays as-is
 	    }
 	    {
 		m_aboveVertexp = vertexp;  // Vars will point at this edge
 		m_aboveTrue = VU_IF;
-		nodep->ifsp()->iterateAndNext(*this);  // directlyUnder stays as-is (true)
+                iterateAndNextNull(nodep->ifsp());  // directlyUnder stays as-is (true)
 	    }
 	    {
 		m_aboveVertexp = vertexp;  // Vars will point at this edge
 		m_aboveTrue = VU_ELSE;
-		nodep->elsesp()->iterateAndNext(*this);  // directlyUnder stays as-is (true)
+                iterateAndNextNull(nodep->elsesp());  // directlyUnder stays as-is (true)
 	    }
 	    m_aboveVertexp = lastabovep;
 	    m_aboveTrue = lasttrue;
@@ -856,7 +853,7 @@ class GaterVisitor : public GaterBaseVisitor {
 	AstVarScope* lastvscp = m_stmtVscp;
 	bool lastpli = m_stmtInPli;
 	m_directlyUnderAlw = under;
-	if (nodep->castNodeStmt()) {  // Restored below
+        if (VN_IS(nodep, NodeStmt)) {  // Restored below
 	    UINFO(9,"       Stmt: "<<nodep<<endl);
 	    m_stmtVscp = NULL;
 	    m_stmtInPli = false;
@@ -867,10 +864,10 @@ class GaterVisitor : public GaterBaseVisitor {
 	    scoreboardPli(nodep);
 	}
 	{
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
 	m_directlyUnderAlw = lastdua;
-	if (nodep->castNodeStmt()) {  // Reset what set above; else propagate up to above statement
+        if (VN_IS(nodep, NodeStmt)) {  // Reset what set above; else propagate up to above statement
 	    m_stmtVscp = lastvscp;
 	    m_stmtInPli = lastpli;
 	}
@@ -878,10 +875,10 @@ class GaterVisitor : public GaterBaseVisitor {
 
 public:
     // CONSTUCTORS
-    explicit GaterVisitor(AstNode* nodep) {
+    explicit GaterVisitor(AstNetlist* nodep) {
 	// AstAlways visitor does the real work, so most zeroing needs to be in clear()
 	clear();
-	nodep->accept(*this);
+        iterate(nodep);
     }
     void clear() {
 	m_nonopt = "";
@@ -911,8 +908,10 @@ public:
 
 void V3ClkGater::clkGaterAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    // While the gater does well at some modules, it seems to slow down many others
-    UINFO(5,"ClkGater is disabled due to performance issues\n");
+    {
+        // While the gater does well at some modules, it seems to slow down many others
+        UINFO(5,"ClkGater is disabled due to performance issues\n");
+    }  // Destruct before checking
     //GaterVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("clkgater.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    V3Global::dumpCheckGlobalTree("clkgater", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

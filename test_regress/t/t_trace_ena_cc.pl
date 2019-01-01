@@ -7,21 +7,25 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
+scenarios(simulator => 1);
+
 top_filename("t/t_trace_ena.v");
 
-compile (
-	 verilator_flags2 => ['-trace'],
-	 );
+compile(
+    verilator_flags2 => ['-trace'],
+    );
 
-execute (
-	 check_finished=>1,
-	 );
+execute(
+    check_finished => 1,
+    );
 
-if ($Self->{vlt}) {
+if ($Self->{vlt_all}) {
     file_grep     ("$Self->{obj_dir}/V$Self->{name}__Trace__Slow.cpp", qr/c_trace_on\"/x);
     file_grep_not ("$Self->{obj_dir}/V$Self->{name}__Trace__Slow.cpp", qr/_trace_off\"/x);
     file_grep     ("$Self->{obj_dir}/simx.vcd", qr/\$enddefinitions/x);
     file_grep_not ("$Self->{obj_dir}/simx.vcd", qr/inside_sub/x);
+
+    vcd_identical("$Self->{obj_dir}/simx.vcd", "t/$Self->{name}.out");
 }
 
 ok(1);

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2009-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2009-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,12 +20,15 @@
 
 #ifndef _V3PARSESYM_H_
 #define _V3PARSESYM_H_ 1
+
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include "V3Error.h"
 #include "V3FileLine.h"
 #include "V3Global.h"
 #include "V3SymTable.h"
+
 #include <deque>
 
 //######################################################################
@@ -33,7 +36,7 @@
 
 class V3ParseSym {
     // TYPES
-    typedef vector<VSymEnt*>	SymStack;
+    typedef std::vector<VSymEnt*> SymStack;
 
 private:
     // MEMBERS
@@ -42,6 +45,17 @@ private:
     VSymEnt*	m_symTableNextId;	// Symbol table for next lexer lookup (parser use only)
     VSymEnt*	m_symCurrentp;		// Active symbol table for additions/lookups
     SymStack	m_sympStack;		// Stack of upper nodes with pending symbol tables
+
+public:
+    // CONSTRUCTORS
+    explicit V3ParseSym(AstNetlist* rootp)
+	: m_syms(rootp) {
+	s_anonNum = 0;		// Number of next anonymous object
+	pushScope(findNewTable(rootp));
+	m_symTableNextId = NULL;
+	m_symCurrentp = symCurrentp();
+    }
+    ~V3ParseSym() {}
 
 private:
     // METHODS
@@ -105,7 +119,7 @@ public:
 	if (m_sympStack.empty()) { nodep->v3fatalSrc("symbol stack underflow"); return; }
 	m_symCurrentp = m_sympStack.back();
     }
-    void showUpward () {
+    void showUpward() {
 	UINFO(1,"ParseSym Stack:\n");
 	for (SymStack::reverse_iterator it=m_sympStack.rbegin(); it!=m_sympStack.rend(); ++it) {
 	    VSymEnt* symp = *it;
@@ -113,16 +127,16 @@ public:
 	}
 	UINFO(1,"ParseSym Current: "<<symCurrentp()->nodep()<<endl);
     }
-    void dump(ostream& os, const string& indent="") {
+    void dump(std::ostream& os, const string& indent="") {
 	m_syms.dump(os,indent);
     }
-    AstNode* findEntUpward (const string& name) {
+    AstNode* findEntUpward(const string& name) {
 	// Lookup the given string as an identifier, return type of the id, scanning upward
 	VSymEnt* foundp = symCurrentp()->findIdFallback(name);
 	if (foundp) return foundp->nodep();
 	else return NULL;
     }
-    void import(AstNode* packagep, const string& id_or_star) {
+    void importItem(AstNode* packagep, const string& id_or_star) {
 	// Import from package::id_or_star to this
 	VSymEnt* symp = getTable(packagep);
 	if (!symp) {  // Internal problem, because we earlier found pkg to label it an ID__aPACKAGE
@@ -133,16 +147,19 @@ public:
 	// We let V3LinkDot report the error instead of us
 	symCurrentp()->importFromPackage(&m_syms, symp, id_or_star);
     }
-public:
-    // CREATORS
-    explicit V3ParseSym(AstNetlist* rootp)
-	: m_syms(rootp) {
-	s_anonNum = 0;		// Number of next anonymous object
-	pushScope(findNewTable(rootp));
-	m_symTableNextId = NULL;
-	m_symCurrentp = symCurrentp();
+    void exportItem(AstNode* packagep, const string& id_or_star) {
+	// Export from this the remote package::id_or_star
+	VSymEnt* symp = getTable(packagep);
+	if (!symp) {  // Internal problem, because we earlier found pkg to label it an ID__aPACKAGE
+	    packagep->v3fatalSrc("Export package not found");
+	    return;
+	}
+	symCurrentp()->exportFromPackage(&m_syms, symp, id_or_star);
     }
-    ~V3ParseSym() {}
+    void exportStarStar(AstNode* packagep) {
+	// Export *::* from remote packages
+	symCurrentp()->exportStarStar(&m_syms);
+    }
 };
 
 #endif // Guard

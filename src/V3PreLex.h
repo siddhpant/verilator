@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2000-2017 by Wilson Snyder.  This program is free software;
+// Copyright 2000-2018 by Wilson Snyder.  This program is free software;
 // you can redistribute it and/or modify it under the terms of either the
 // GNU Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -25,11 +25,11 @@
 #ifndef _VPREPROCLEX_H_		// Guard
 #define _VPREPROCLEX_H_ 1
 
-#include <deque>
-#include <stack>
-
 #include "V3Error.h"
 #include "V3FileLine.h"
+
+#include <deque>
+#include <stack>
 
 //======================================================================
 
@@ -65,6 +65,7 @@ class V3PreProcImp;
 #define VP_BACKQUOTE	311
 #define VP_SYMBOL_JOIN	312
 #define VP_DEFREF_JOIN	313
+#define VP_JOIN		314
 
 #define VP_PSL		350
 
@@ -111,9 +112,9 @@ extern char* yyourtext();
 extern size_t yyourleng();
 extern void yyourtext(const char* textp, size_t size);  // Must call with static
 
-YY_BUFFER_STATE yy_create_buffer ( FILE *file, int size );
-void yy_switch_to_buffer( YY_BUFFER_STATE new_buffer );
-void yy_delete_buffer( YY_BUFFER_STATE b );
+YY_BUFFER_STATE yy_create_buffer(FILE *file, int size);
+void yy_switch_to_buffer(YY_BUFFER_STATE new_buffer);
+void yy_delete_buffer(YY_BUFFER_STATE b);
 
 //======================================================================
 
@@ -127,7 +128,7 @@ class VPreStream {
 public:
     FileLine*		m_curFilelinep;	// Current processing point (see also m_tokFilelinep)
     V3PreLex*		m_lexp;		// Lexer, for resource tracking
-    deque<string>	m_buffers;	// Buffer of characters to process
+    std::deque<string>  m_buffers;      // Buffer of characters to process
     int			m_ignNewlines;	// Ignore multiline newlines
     bool		m_eof;		// "EOF" buffer
     bool		m_file;		// Buffer is start of new file
@@ -151,7 +152,7 @@ private:
 class V3PreLex {
   public:	// Used only by V3PreLex.cpp and V3PreProc.cpp
     V3PreProcImp*	m_preimpp;	// Preprocessor lexor belongs to
-    stack<VPreStream*>	m_streampStack;	// Stack of processing files
+    std::stack<VPreStream*> m_streampStack;  // Stack of processing files
     int			m_streamDepth;	// Depth of stream processing
     YY_BUFFER_STATE	m_bufferState;	// Flex state
     FileLine*		m_tokFilelinep;	// Starting position of current token

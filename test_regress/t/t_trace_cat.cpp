@@ -8,15 +8,10 @@
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 
-#if defined(T_TRACE_CAT)
-# include "Vt_trace_cat.h"
-#elif defined(T_TRACE_CAT_REOPEN)
-# include "Vt_trace_cat_reopen.h"
-#elif defined(T_TRACE_CAT_RENEW)
-# include "Vt_trace_cat_renew.h"
-#else
-# error "Unknown test"
-#endif
+#include VM_PREFIX_INCLUDE
+
+#define STRINGIFY(x) STRINGIFY2(x)
+#define STRINGIFY2(x) #x
 
 unsigned long long main_time = 0;
 double sc_time_stamp() {
@@ -25,15 +20,7 @@ double sc_time_stamp() {
 
 const char* trace_name() {
     static char name[1000];
-#if defined(T_TRACE_CAT)
-    VL_SNPRINTF(name,1000,"obj_dir/t_trace_cat/simpart_%04d.vcd", (int)main_time);
-#elif defined(T_TRACE_CAT_REOPEN)
-    VL_SNPRINTF(name,1000,"obj_dir/t_trace_cat_reopen/simpart_%04d.vcd", (int)main_time);
-#elif defined(T_TRACE_CAT_RENEW)
-    VL_SNPRINTF(name,1000,"obj_dir/t_trace_cat_renew/simpart_%04d.vcd", (int)main_time);
-#else
-# error "Unknown test"
-#endif
+    VL_SNPRINTF(name, 1000, STRINGIFY(TEST_OBJ_DIR) "/simpart_%04d.vcd", (int)main_time);
     return name;
 }
 
@@ -51,7 +38,7 @@ int main(int argc, char **argv, char **env) {
     top->clk = 0;
 
     while (main_time < 190) {  // Creates 2 files
-	top->clk   = ~top->clk;
+        top->clk = !top->clk;
 	top->eval();
 
 	if ((main_time % 100) == 0) {
@@ -75,6 +62,6 @@ int main(int argc, char **argv, char **env) {
     }
     tfp->close();
     top->final();
-    printf ("*-* All Finished *-*\n");
+    printf("*-* All Finished *-*\n");
     return 0;
 }

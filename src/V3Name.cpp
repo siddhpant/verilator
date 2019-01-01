@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -25,15 +25,14 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
 
 #include "V3Global.h"
 #include "V3Name.h"
 #include "V3Ast.h"
 #include "V3LanguageWords.h"
+
+#include <algorithm>
+#include <cstdarg>
 
 //######################################################################
 // Name state, as a visitor of each AstNode
@@ -52,22 +51,18 @@ private:
     V3LanguageWords 	m_words;	// Reserved word detector
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void rename(AstNode* nodep, bool addPvt) {
 	if (!nodep->user1()) {  // Not already done
 	    if (addPvt) {
-		string newname = (string)"__PVT__"+nodep->name();
+                string newname = string("__PVT__")+nodep->name();
 		nodep->name(newname);
 	    } else {
 		string rsvd = m_words.isKeyword(nodep->name());
 		if (rsvd != "") {
 		    nodep->v3warn(SYMRSVDWORD,"Symbol matches "+rsvd+": '"<<nodep->prettyName()<<"'");
-		    string newname = (string)"__SYM__"+nodep->name();
+                    string newname = string("__SYM__")+nodep->name();
 		    nodep->name(newname);
 		}
 	    }
@@ -78,7 +73,7 @@ private:
     // VISITORS
     virtual void visit(AstNodeModule* nodep) {
 	m_modp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     // Add __PVT__ to names of local signals
@@ -91,54 +86,55 @@ private:
     }
     virtual void visit(AstCFunc* nodep) {
 	if (!nodep->user1()) {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	    rename(nodep, false);
 	}
     }
     virtual void visit(AstVarRef* nodep) {
 	if (nodep->varp()) {
-	    nodep->varp()->iterate(*this);
+            iterate(nodep->varp());
 	    nodep->name(nodep->varp()->name());
 	}
     }
     virtual void visit(AstCell* nodep) {
 	if (!nodep->user1()) {
 	    rename(nodep, !nodep->modp()->modPublic());
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
     }
     virtual void visit(AstMemberDType* nodep) {
 	if (!nodep->user1()) {
 	    rename(nodep, false);
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
     }
     virtual void visit(AstMemberSel* nodep) {
 	if (!nodep->user1()) {
 	    rename(nodep, false);
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
     }
     virtual void visit(AstScope* nodep) {
 	if (!nodep->user1SetOnce()) {
-	    if (nodep->aboveScopep()) nodep->aboveScopep()->iterate(*this);
-	    if (nodep->aboveCellp()) nodep->aboveCellp()->iterate(*this);
+            if (nodep->aboveScopep()) iterate(nodep->aboveScopep());
+            if (nodep->aboveCellp()) iterate(nodep->aboveCellp());
 	    // Always recompute name (as many level above scope may have changed)
 	    // Same formula as V3Scope
 	    nodep->name(nodep->isTop() ? "TOP"
 			: (nodep->aboveScopep()->name()+"."+nodep->aboveCellp()->name()));
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
     }
 
     //--------------------
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTUCTORS
     explicit NameVisitor(AstNetlist* nodep) {
-	nodep->accept(*this);
+        m_modp = NULL;
+        iterate(nodep);
     }
     virtual ~NameVisitor() {}
 };
@@ -148,6 +144,8 @@ public:
 
 void V3Name::nameAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    NameVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("name.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
+    {
+        NameVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("name", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
 }

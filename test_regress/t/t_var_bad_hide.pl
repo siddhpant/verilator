@@ -7,15 +7,13 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-compile (
-	 v_flags2 => ["--lint-only -Wwarn-VARHIDDEN"],
-	 fails=>$Self->{v3},
-	 expect=>
-'%Warning-VARHIDDEN: t/t_var_bad_hide.v:\d+: Declaration of signal hides declaration in upper scope: top
-.*
-%Warning-VARHIDDEN: t/t_var_bad_hide.v:\d+: ... Location of original declaration
-%Error: Exiting due to.*',
-	 );
+scenarios(simulator => 1);
+
+compile(
+    v_flags2 => ["--lint-only -Wwarn-VARHIDDEN"],
+    fails => $Self->{vlt_all},
+    expect_filename => $Self->{golden_filename},
+    );
 
 ok(1);
 1;

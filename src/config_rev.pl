@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 ######################################################################
 #
-# Copyright 2005-2017 by Wilson Snyder.  Verilator is free software; you
+# Copyright 2005-2018 by Wilson Snyder.  Verilator is free software; you
 # can redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -30,7 +30,7 @@ if ($data =~ /Changed but not updated/i
     $rev .= " (mod)";
 }
 
-print "static const char* DTVERSION_rev = \"$rev\";\n";
+print "static const char* const DTVERSION_rev = \"$rev\";\n";
 
 # Die after the print, so at least the header has good contents
 $rev =~ /UNKNOWN/ and warn "%Warning: No git revision found,";

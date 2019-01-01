@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -24,15 +24,14 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <vector>
 
 #include "V3Global.h"
 #include "V3CoverageJoin.h"
 #include "V3Hashed.h"
 #include "V3Stats.h"
+
+#include <cstdarg>
+#include <vector>
 
 //######################################################################
 // CoverageJoin state, as a visitor of each AstNode
@@ -46,7 +45,7 @@ private:
     //AstUser4InUse	In V3Hashed
 
     // TYPES
-    typedef vector<AstCoverToggle*> ToggleList;
+    typedef std::vector<AstCoverToggle*> ToggleList;
 
     // STATE
     ToggleList		m_toggleps;	// List of of all AstCoverToggle's
@@ -54,11 +53,7 @@ private:
     V3Double0		m_statToggleJoins;	// Statistic tracking
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void detectDuplicates() {
 	UINFO(9,"Finding duplicates\n");
@@ -82,14 +77,14 @@ private:
 		    AstNode* duporigp = hashed.iteratorNodep(dupit);
 		    // Note hashed will point to the original variable (what's duplicated), not the covertoggle,
 		    // but we need to get back to the covertoggle which is immediately above, so:
-		    AstCoverToggle* removep = duporigp->backp()->castCoverToggle();
+                    AstCoverToggle* removep = VN_CAST(duporigp->backp(), CoverToggle);
 		    if (!removep) nodep->v3fatalSrc("CoverageJoin duplicate of wrong type");
 		    UINFO(8,"  Orig "<<nodep<<" -->> "<<nodep->incp()->declp()<<endl);
 		    UINFO(8,"   dup "<<removep<<" -->> "<<removep->incp()->declp()<<endl);
 		    // The CoverDecl the duplicate pointed to now needs to point to the original's data
 		    // IE the duplicate will get the coverage number from the non-duplicate
 		    AstCoverDecl* datadeclp = nodep->incp()->declp()->dataDeclThisp();
-		    removep->incp()->declp()->dataDeclp (datadeclp);
+                    removep->incp()->declp()->dataDeclp(datadeclp);
 		    UINFO(8,"   new "<<removep->incp()->declp()<<endl);
 		    // Mark the found node as a duplicate of the first node
 		    // (Not vice-versa as we have the iterator for the found node)
@@ -105,24 +100,24 @@ private:
     // VISITORS
     virtual void visit(AstNetlist* nodep) {
 	// Find all Coverage's
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	// Simplify
 	detectDuplicates();
     }
     virtual void visit(AstCoverToggle* nodep) {
 	m_toggleps.push_back(nodep);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     //--------------------
     virtual void visit(AstNodeMath* nodep) {}  // Accelerate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
     // CONSTUCTORS
     explicit CoverageJoinVisitor(AstNetlist* nodep) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~CoverageJoinVisitor() {
 	V3Stats::addStat("Coverage, Toggle points joined", m_statToggleJoins);
@@ -134,6 +129,8 @@ public:
 
 void V3CoverageJoin::coverageJoin(AstNetlist* rootp) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    CoverageJoinVisitor visitor (rootp);
-    V3Global::dumpCheckGlobalTree("coveragejoin.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        CoverageJoinVisitor visitor (rootp);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("coveragejoin", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

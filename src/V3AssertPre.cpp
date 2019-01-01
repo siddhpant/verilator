@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2005-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2005-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,15 +23,12 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <map>
-#include <iomanip>
 
 #include "V3Global.h"
 #include "V3AssertPre.h"
-#include "V3Ast.h"
+
+#include <cstdarg>
+#include <iomanip>
 
 //######################################################################
 // Assert class functions
@@ -44,22 +41,22 @@ private:
     // NODE STATE/TYPES
     // STATE
     // Reset each module:
-    AstNodeSenItem*	m_seniDefaultp;	// Default sensitivity (from AstDefClock)
+    AstNodeSenItem* m_seniDefaultp;  // Default sensitivity (from AstDefClock)
     // Reset each assertion:
-    AstNodeSenItem*	m_senip;	// Last sensitivity
+    AstNodeSenItem* m_senip;  // Last sensitivity
+    // Reset each always:
+    AstNodeSenItem* m_seniAlwaysp;  // Last sensitivity in always
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     AstSenTree* newSenTree(AstNode* nodep) {
 	// Create sentree based on clocked or default clock
 	// Return NULL for always
 	AstSenTree* newp = NULL;
-	AstNodeSenItem* senip = m_senip ? m_senip : m_seniDefaultp;
+        AstNodeSenItem* senip = m_senip;
+        if (!senip) senip = m_seniDefaultp;
+        if (!senip) senip = m_seniAlwaysp;
 	if (!senip) {
 	    nodep->v3error("Unsupported: Unclocked assertion");
 	    newp = new AstSenTree(nodep->fileline(), NULL);
@@ -72,7 +69,8 @@ private:
 	m_senip = NULL;
     }
 
-    // VISITORS  //========== Statements
+    // VISITORS
+    //========== Statements
     virtual void visit(AstClocking* nodep) {
 	UINFO(8,"   CLOCKING"<<nodep<<endl);
 	// Store the new default clock, reset on new module
@@ -85,16 +83,31 @@ private:
 	}
 	pushDeletep(nodep); VL_DANGLING(nodep);
     }
+    virtual void visit(AstAlways* nodep) {
+        iterateAndNextNull(nodep->sensesp());
+        if (nodep->sensesp()) {
+            m_seniAlwaysp = nodep->sensesp()->sensesp();
+        }
+        iterateAndNextNull(nodep->bodysp());
+        m_seniAlwaysp = NULL;
+    }
 
-    virtual void visit(AstPslCover* nodep) {
+    virtual void visit(AstNodePslCoverOrAssert* nodep) {
 	if (nodep->sentreep()) return;  // Already processed
 	clearAssertInfo();
-	nodep->iterateChildren(*this);
+        // Find PslClocking's burried under nodep->exprsp
+        iterateChildren(nodep);
 	nodep->sentreep(newSenTree(nodep));
 	clearAssertInfo();
     }
+    virtual void visit(AstPast* nodep) {
+        if (nodep->sentreep()) return;  // Already processed
+        iterateChildren(nodep);
+        nodep->sentreep(newSenTree(nodep));
+    }
     virtual void visit(AstPslClocked* nodep) {
-	nodep->iterateChildren(*this);
+        // No need to iterate the body, once replace will get iterated
+        iterateAndNextNull(nodep->sensesp());
 	if (m_senip) {
 	    nodep->v3error("Unsupported: Only one PSL clock allowed per assertion");
 	}
@@ -112,21 +125,22 @@ private:
 	pushDeletep(nodep); VL_DANGLING(nodep);
     }
     virtual void visit(AstNodeModule* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	// Reset defaults
 	m_seniDefaultp = NULL;
     }
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
     // CONSTRUCTORS
     explicit AssertPreVisitor(AstNetlist* nodep) {
 	m_seniDefaultp = NULL;
+        m_seniAlwaysp = NULL;
 	clearAssertInfo();
 	// Process
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~AssertPreVisitor() {}
 };
@@ -136,6 +150,8 @@ public:
 
 void V3AssertPre::assertPreAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    AssertPreVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("assertpre.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        AssertPreVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("assertpre", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

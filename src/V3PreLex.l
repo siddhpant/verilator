@@ -10,7 +10,7 @@
  *
  **************************************************************************
  *
- * Copyright 2003-2017 by Wilson Snyder.  This program is free software;
+ * Copyright 2003-2018 by Wilson Snyder.  This program is free software;
  * you can redistribute it and/or modify it under the terms of either the
  * GNU Lesser General Public License Version 3 or the Perl Artistic License
  * Version 2.0.
@@ -70,17 +70,19 @@ wsn		[ \t\f]
 crnl		[\r]*[\n]
 quote		[\"]
 tickquote	[`][\"]
-backslash	[\\]
 /* Where we use symb/symbdef, we must also look for a `` join */
 /* Note in the preprocessor \ESCaped is *not* always special; mantis1537/bug441 */
 symb		([a-zA-Z_][a-zA-Z0-9_$]*|\\[^ \t\f\r\n]+)
 symbdef		([a-zA-Z_][a-zA-Z0-9_$]*|\\[^ \t\f\r\n`]+)
 word		[a-zA-Z0-9_]+
 drop		[\032]
+bom		[\357\273\277]
+
 
 	/**************************************************************/
 %%
 
+<INITIAL>{bom}		{ }
 <INITIAL,STRIFY>^{ws}*"`line"{ws}+.*{crnl}	{ LEXP->lineDirective(yytext);
 						  return(VP_LINE); }
 
@@ -110,8 +112,9 @@ drop		[\032]
 <STRMODE>{crnl}		{ linenoInc(); yyerrorf("Unterminated string"); BEGIN(INITIAL); }
 <STRMODE>{word}		{ yymore(); }
 <STRMODE>[^\"\\]	{ yymore(); }
-<STRMODE>{backslash}{crnl}	{ linenoInc(); yymore(); }
-<STRMODE>{backslash}.	{ yymore(); }
+<STRMODE>[\\]{crnl}	{ linenoInc(); yymore(); }
+<STRMODE>[\\]{wsn}+{crnl}  { yyless(1); LEXP->curFilelinep()->v3warn(BSSPACE, "Backslash followed by whitespace, perhaps the whitespace is accidental?"); }
+<STRMODE>[\\].		{ yymore(); }
 <STRMODE>{quote} 	{ yy_pop_state();
 			  if (LEXP->m_parenLevel || LEXP->m_defQuote) { LEXP->m_defQuote=false; appendDefValue(yytext,yyleng); yyleng=0; }
 			  else return (VP_STRING); }
@@ -126,6 +129,7 @@ drop		[\032]
 <STRIFY>{symbdef}``	{ yyleng-=2; return (VP_SYMBOL_JOIN); }
 <STRIFY>"`"{symbdef}	{ return (VP_DEFREF); }
 <STRIFY>"`"{symbdef}``	{ yyleng-=2; return (VP_DEFREF_JOIN); }
+<STRIFY>``              { yyleng-=2; return (VP_JOIN); }
 <STRIFY>{crnl}		{ linenoInc(); yytext=(char*)"\n"; yyleng=1; return(VP_WHITE); }
 <STRIFY>{wsn}+		{ return (VP_WHITE); }
 <STRIFY>{drop}		{ }
@@ -143,7 +147,7 @@ drop		[\032]
 <INCMODE><<EOF>>	{ linenoInc(); yyerrorf("EOF in unterminated include filename"); yyleng=0; yyterminate(); }
 <INCMODE>{crnl}		{ linenoInc(); yyerrorf("Unterminated include filename"); BEGIN(INITIAL); }
 <INCMODE>[^\>\\]	{ yymore(); }
-<INCMODE>{backslash}.	{ yymore(); }
+<INCMODE>[\\].		{ yymore(); }
 <INCMODE>[\>]	 	{ yy_pop_state(); return VP_STRING; }
 
 	/* Reading definition formal parenthesis (or not) to begin formal arguments */
@@ -161,6 +165,7 @@ drop		[\032]
 <DEFFORM>{drop}		{ }
 <DEFFORM><<EOF>>	{ linenoInc(); yy_pop_state(); yyerrorf("Unterminated ( in define formal arguments."); yyleng=0; return VP_DEFFORM; }
 <DEFFORM>{crnl}		{ linenoInc(); appendDefValue((char*)"\n",1); } /* Include return so can maintain output line count */
+<DEFFORM>[\\]{wsn}+{crnl}  { yyless(1); LEXP->curFilelinep()->v3warn(BSSPACE, "Backslash followed by whitespace, perhaps the whitespace is accidental?"); }
 <DEFFORM>[\\]{crnl}	{ linenoInc(); appendDefValue((char*)"\\\n",2); } /* Include return so can maintain output line count */
 <DEFFORM>{quote}	{ LEXP->m_defQuote=true; yy_push_state(STRMODE); yymore(); }  /* Legal only in default values */
 <DEFFORM>"`\\`\""	{ appendDefValue(yytext,yyleng); }  /* Maybe illegal, otherwise in default value */
@@ -178,6 +183,7 @@ drop		[\032]
 <DEFVAL>{drop}		{ }
 <DEFVAL><<EOF>>		{ linenoInc(); yy_pop_state(); yytext=(char*)"\n"; yyleng=1; return (VP_DEFVALUE); } /* Technically illegal, but people complained */
 <DEFVAL>{crnl}		{ linenoInc(); yy_pop_state(); yytext=(char*)"\n"; yyleng=1; return (VP_DEFVALUE); }
+<DEFVAL>[\\]{wsn}+{crnl}  { yyless(1); LEXP->curFilelinep()->v3warn(BSSPACE, "Backslash followed by whitespace, perhaps the whitespace is accidental?"); }
 <DEFVAL>[\\]{crnl}	{ linenoInc(); appendDefValue((char*)"\\\n",2); } /* Return, AND \ is part of define value */
 <DEFVAL>{quote}		{ LEXP->m_defQuote=true; yy_push_state(STRMODE); yymore(); }
 <DEFVAL>[^\/\*\n\r\\\"]+	|
@@ -188,6 +194,7 @@ drop		[\032]
 	/* - if no \{crnl} ending then the comment belongs to the next line, as a non-embedded comment */
 	/* - if all but (say) 3rd line is missing \ then it's indeterminate */
 <DEFCMT>"*/"		{ yy_pop_state(); appendDefValue(yytext,yyleng); }
+<DEFCMT>[\\]{wsn}+{crnl}  { yyless(1); LEXP->curFilelinep()->v3warn(BSSPACE, "Backslash followed by whitespace, perhaps the whitespace is accidental?"); }
 <DEFCMT>[\\]{crnl}	{ linenoInc(); LEXP->m_defCmtSlash=true;
 	 		  appendDefValue(yytext,yyleng-2); appendDefValue((char*)"\n",1); }  /* Return but not \ */
 <DEFCMT>{crnl}		{ linenoInc(); yymore(); if (LEXP->m_defCmtSlash) yyerrorf("One line of /* ... */ is missing \\ before newline");
@@ -204,7 +211,7 @@ drop		[\032]
 <ARGMODE>{crnl}		{ linenoInc(); yytext=(char*)"\n"; yyleng=1; return(VP_WHITE); }
 <ARGMODE>{quote}	{ yy_push_state(STRMODE); yymore(); }
 <ARGMODE>"`\\`\""	{ appendDefValue(yytext,yyleng); }  /* Literal text */
-<ARGMODE>{tickquote}	{ return(VP_STRIFY); }
+<ARGMODE>{tickquote}	{ yy_push_state(STRIFY); return(VP_STRIFY); }
 <ARGMODE>[{\[]		{ LEXP->m_parenLevel++; appendDefValue(yytext,yyleng); }
 <ARGMODE>[}\]]		{ LEXP->m_parenLevel--; appendDefValue(yytext,yyleng); }
 <ARGMODE>[(]		{ LEXP->m_parenLevel++;
@@ -229,6 +236,7 @@ drop		[\032]
 			}}
 <ARGMODE>"`"{symbdef}	{ appendDefValue(yytext,yyleng); }  /* defref in defref - outer macro expands first */
 <ARGMODE>"`"{symbdef}`` { appendDefValue(yytext,yyleng); }  /* defref in defref - outer macro expands first */
+<ARGMODE>``             { appendDefValue(yytext,yyleng); }  /* defref in defref - outer macro expands first */
 <ARGMODE>[^\/\*\n\r\\(,){}\[\]\"`]+	|
 <ARGMODE>.		{ appendDefValue(yytext,yyleng); }
 
@@ -259,6 +267,7 @@ drop		[\032]
 <INITIAL><<EOF>>	{ yyterminate(); }  /* A "normal" EOF */
 <INITIAL>{symb} 	{ return (VP_SYMBOL); }
 <INITIAL>{symb}``	{ yyleng-=2; return (VP_SYMBOL_JOIN); }
+<INITIAL>``		{ yyleng-=2; return (VP_JOIN); }
 <INITIAL>{wsn}+		{ return (VP_WHITE); }
 <INITIAL>{drop}		{ }
 <INITIAL>[\r]		{ }
@@ -493,12 +502,12 @@ void V3PreLex::lineDirective(const char* textp) {
 }
 
 void V3PreLex::dumpSummary() {
-    cout<<"-  pp::dumpSummary  curBuf="<<(void*)(currentBuffer());
+    cout<<"-  pp::dumpSummary  curBuf="<<cvtToHex(currentBuffer());
 #ifdef FLEX_DEBUG  // Else peeking at internals may cause portability issues
     ssize_t left = (yy_n_chars
 		    - (yy_c_buf_p
 		       -currentBuffer()->yy_ch_buf));
-    cout<<" left="<<dec<<left;
+    cout<<" left="<<std::dec<<left;
 #endif
     cout<<endl;
 }
@@ -506,10 +515,10 @@ void V3PreLex::dumpSummary() {
 void V3PreLex::dumpStack() {
     // For debug use
     dumpSummary();
-    stack<VPreStream*> tmpstack = LEXP->m_streampStack;
+    std::stack<VPreStream*> tmpstack = LEXP->m_streampStack;
     while (!tmpstack.empty()) {
 	VPreStream* streamp = tmpstack.top();
-	cout<<"-    bufferStack["<<(void*)(streamp)<<"]: "
+	cout<<"-    bufferStack["<<cvtToHex(streamp)<<"]: "
 	    <<" at="<<streamp->m_curFilelinep
 	    <<" nBuf="<<streamp->m_buffers.size()
 	    <<" size0="<<(streamp->m_buffers.empty() ? 0 : streamp->m_buffers.front().length())
@@ -523,8 +532,8 @@ void V3PreLex::dumpStack() {
 string V3PreLex::cleanDbgStrg(const string& in) {
     string out = in;
     string::size_type pos;
-    while ((pos=out.find("\n")) != string::npos) { out.replace(pos, 1, "\\n"); }
-    while ((pos=out.find("\r")) != string::npos) { out.replace(pos, 1, "\\r"); }
+    while ((pos = out.find('\n')) != string::npos) { out.replace(pos, 1, "\\n"); }
+    while ((pos = out.find('\r')) != string::npos) { out.replace(pos, 1, "\\r"); }
     return out;
 }
 

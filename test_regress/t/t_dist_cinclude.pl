@@ -9,11 +9,13 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 
 use IO::File;
 
+scenarios(dist => 1);
+
 my $root = "..";
 my $Debug;
 
 if (!-r "$root/.git") {
-    $Self->skip("Not in a git repository");
+    skip("Not in a git repository");
 } else {
     ### Must trim output before and after our file list
     my $files = `cd $root && git ls-files --exclude-standard`;
@@ -22,32 +24,33 @@ if (!-r "$root/.git") {
     my $cmd = "cd $root && fgrep -n include $files | sort";
     my $grep = `$cmd`;
     foreach my $line (split /\n/, $grep) {
-	next if $line =~ /vpi_user.h/;  # IEEE Standard file - can't change it
-	my $hit;
-	$hit = 1 if $line =~ /\bassert\.h/;
-	$hit = 1 if $line =~ /\bctype\.h/;
-	$hit = 1 if $line =~ /\berrno\.h/;
-	$hit = 1 if $line =~ /\bfloat\.h/;
-	$hit = 1 if $line =~ /\blimits\.h/;
-	$hit = 1 if $line =~ /\blocale\.h/;
-	$hit = 1 if $line =~ /\bmath\.h/;
-	$hit = 1 if $line =~ /\bsetjmp\.h/;
-	$hit = 1 if $line =~ /\bsignal\.h/;
-	$hit = 1 if $line =~ /\bstdarg\.h/;
-	$hit = 1 if $line =~ /\bstdbool\.h/;
-	$hit = 1 if $line =~ /\bstddef\.h/;
-	#Not yet: $hit = 1 if $line =~ /\bstdint\.h/;
-	$hit = 1 if $line =~ /\bstdio\.h/;
-	$hit = 1 if $line =~ /\bstdlib\.h/;
-	$hit = 1 if $line =~ /\bstring\.h/;
-	$hit = 1 if $line =~ /\btime\.h/;
-	next if !$hit;
-	print "$line\n";
-	$names{$1} = 1 if $line =~ /^([^:]+)/;
+        next if $line =~ m!include/vltstd/vpi_user.h!;  # IEEE Standard file - can't change it
+        next if $line =~ m!include/gtkwave/!;  # Standard file - can't change it
+        my $hit;
+        $hit = 1 if $line =~ /\bassert\.h/;
+        $hit = 1 if $line =~ /\bctype\.h/;
+        $hit = 1 if $line =~ /\berrno\.h/;
+        $hit = 1 if $line =~ /\bfloat\.h/;
+        $hit = 1 if $line =~ /\blimits\.h/;
+        $hit = 1 if $line =~ /\blocale\.h/;
+        $hit = 1 if $line =~ /\bmath\.h/;
+        $hit = 1 if $line =~ /\bsetjmp\.h/;
+        $hit = 1 if $line =~ /\bsignal\.h/;
+        $hit = 1 if $line =~ /\bstdarg\.h/;
+        $hit = 1 if $line =~ /\bstdbool\.h/;
+        $hit = 1 if $line =~ /\bstddef\.h/;
+        #Not yet: $hit = 1 if $line =~ /\bstdint\.h/;
+        $hit = 1 if $line =~ /\bstdio\.h/;
+        $hit = 1 if $line =~ /\bstdlib\.h/;
+        $hit = 1 if $line =~ /\bstring\.h/;
+        $hit = 1 if $line =~ /\btime\.h/ && $line !~ m!sys/time.h!;
+        next if !$hit;
+        print "$line\n";
+        $names{$1} = 1 if $line =~ /^([^:]+)/;
     }
 
     if (keys %names) {
-	$Self->error("Files like stdint.h instead of cstdint: ",join(' ',sort keys %names));
+        error("Files like stdint.h instead of cstdint: ",join(' ',sort keys %names));
     }
 }
 

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -24,16 +24,15 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <map>
-#include <algorithm>
-#include <vector>
 
 #include "V3Global.h"
 #include "V3LinkLValue.h"
 #include "V3Ast.h"
+
+#include <algorithm>
+#include <cstdarg>
+#include <map>
+#include <vector>
 
 //######################################################################
 // Link state, as a visitor of each AstNode
@@ -47,11 +46,7 @@ private:
     AstNodeFTask* m_ftaskp;	// Function or task we're inside
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     // VISITs
     // Result handing
@@ -61,34 +56,34 @@ private:
 	    nodep->lvalue(true);
 	}
 	if (nodep->varp()) {
-	    if (nodep->lvalue() && nodep->varp()->isInOnly()) {
-		if (!m_ftaskp) {
-		    nodep->v3warn(ASSIGNIN,"Assigning to input variable: "<<nodep->prettyName());
-		}
-	    }
-	}
-	nodep->iterateChildren(*this);
+            if (nodep->lvalue() && !m_ftaskp
+                && nodep->varp()->isReadOnly()) {
+                nodep->v3warn(ASSIGNIN,"Assigning to input/const variable: "
+                              <<nodep->prettyName());
+            }
+        }
+        iterateChildren(nodep);
     }
 
     // Nodes that start propagating down lvalues
     virtual void visit(AstPin* nodep) {
-	if (nodep->modVarp() && nodep->modVarp()->isOutput()) {
-	    // When the varref's were created, we didn't know the I/O state
-	    // Now that we do, and it's from a output, we know it's a lvalue
-	    m_setRefLvalue = true;
-	    nodep->iterateChildren(*this);
+        if (nodep->modVarp() && nodep->modVarp()->isWritable()) {
+            // When the varref's were created, we didn't know the I/O state
+            // Now that we do, and it's from a output, we know it's a lvalue
+            m_setRefLvalue = true;
+            iterateChildren(nodep);
 	    m_setRefLvalue = false;
 	} else {
-	    nodep->iterateChildren(*this);
+            iterateChildren(nodep);
 	}
     }
     virtual void visit(AstNodeAssign* nodep) {
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    m_setRefLvalue = false;
-	    nodep->rhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -96,10 +91,10 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->filep()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filep());
 	    m_setRefLvalue = false;
-	    nodep->filenamep()->iterateAndNext(*this);
-	    nodep->modep()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filenamep());
+            iterateAndNextNull(nodep->modep());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -107,7 +102,7 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->filep()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filep());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -115,7 +110,7 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->filep()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filep());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -123,7 +118,7 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->filep()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filep());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -131,8 +126,8 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->filep()->iterateAndNext(*this);
-	    nodep->strgp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filep());
+            iterateAndNextNull(nodep->strgp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -140,8 +135,8 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->filep()->iterateAndNext(*this);
-	    nodep->exprsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filep());
+            iterateAndNextNull(nodep->exprsp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -149,33 +144,35 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->exprsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->exprsp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
     virtual void visit(AstSysIgnore* nodep) {
 	// Can't know if lvalue or not; presume so as stricter
 	bool last_setRefLvalue = m_setRefLvalue;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_setRefLvalue = last_setRefLvalue;
     }
     virtual void visit(AstReadMem* nodep) {
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->memp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->memp());
 	    m_setRefLvalue = false;
-	    nodep->filenamep()->iterateAndNext(*this);
-	    nodep->lsbp()->iterateAndNext(*this);
-	    nodep->msbp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->filenamep());
+            iterateAndNextNull(nodep->lsbp());
+            iterateAndNextNull(nodep->msbp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
     virtual void visit(AstValuePlusArgs* nodep) {
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
+	    m_setRefLvalue = false;
+            iterateAndNextNull(nodep->searchp());
 	    m_setRefLvalue = true;
-	    nodep->exprsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->outp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -183,9 +180,9 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
 	    m_setRefLvalue = true;
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    m_setRefLvalue = false;
-	    nodep->fmtp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->fmtp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -194,20 +191,20 @@ private:
     virtual void visit(AstSel* nodep) {
 	bool last_setRefLvalue = m_setRefLvalue;
 	{
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    // Only set lvalues on the from
 	    m_setRefLvalue = false;
-	    nodep->rhsp()->iterateAndNext(*this);
-	    nodep->thsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
+            iterateAndNextNull(nodep->thsp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
     virtual void visit(AstNodeSel* nodep) {
 	bool last_setRefLvalue = m_setRefLvalue;
 	{   // Only set lvalues on the from
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    m_setRefLvalue = false;
-	    nodep->rhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
@@ -215,23 +212,23 @@ private:
 	bool last_setRefLvalue = m_setRefLvalue;
 	{   // selp is not an lvalue
 	    m_setRefLvalue = false;
-	    nodep->selp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->selp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
     virtual void visit(AstNodePreSel* nodep) {
 	bool last_setRefLvalue = m_setRefLvalue;
 	{   // Only set lvalues on the from
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	    m_setRefLvalue = false;
-	    nodep->rhsp()->iterateAndNext(*this);
-	    nodep->thsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->rhsp());
+            iterateAndNextNull(nodep->thsp());
 	}
 	m_setRefLvalue = last_setRefLvalue;
     }
     virtual void visit(AstNodeFTask* nodep) {
 	m_ftaskp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_ftaskp = NULL;
     }
     virtual void visit(AstNodeFTaskRef* nodep) {
@@ -240,15 +237,15 @@ private:
 	// We'll deal with mismatching pins later
 	if (!taskp) return;
 	for (AstNode* stmtp = taskp->stmtsp(); stmtp && pinp; stmtp=stmtp->nextp()) {
-	    if (AstVar* portp = stmtp->castVar()) {
-		if (portp->isIO()) {
-		    if (portp->isInput()) {
-			pinp->iterate(*this);
-		    } else {  // Output or Inout
-			m_setRefLvalue = true;
-			pinp->iterate(*this);
-			m_setRefLvalue = false;
-		    }
+            if (const AstVar* portp = VN_CAST(stmtp, Var)) {
+                if (portp->isIO()) {
+                    if (portp->isWritable()) {
+                        m_setRefLvalue = true;
+                        iterate(pinp);
+                        m_setRefLvalue = false;
+                    } else {
+                        iterate(pinp);
+                    }
 		    // Advance pin
 		    pinp = pinp->nextp();
 		}
@@ -258,7 +255,7 @@ private:
 
     virtual void visit(AstNode* nodep) {
 	// Default: Just iterate
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -266,7 +263,7 @@ public:
     LinkLValueVisitor(AstNode* nodep, bool start) {
 	m_setRefLvalue = start;
 	m_ftaskp = NULL;
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~LinkLValueVisitor() {}
 };
@@ -274,10 +271,12 @@ public:
 //######################################################################
 // Link class functions
 
-void V3LinkLValue::linkLValue(AstNetlist* rootp) {
+void V3LinkLValue::linkLValue(AstNetlist* nodep) {
     UINFO(4,__FUNCTION__<<": "<<endl);
-    LinkLValueVisitor visitor(rootp, false);
-    V3Global::dumpCheckGlobalTree("linklvalue.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
+    {
+        LinkLValueVisitor visitor(nodep, false);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("linklvalue", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
 }
 void V3LinkLValue::linkLValueSet(AstNode* nodep) {
     // Called by later link functions when it is known a node needs

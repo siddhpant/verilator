@@ -11,7 +11,7 @@ use IO::File;
 use Pod::Usage;
 eval { use Data::Dumper;  $Data::Dumper::Indent = 1; }; # Debug, ok if missing
 use strict;
-use vars qw ($Debug);
+use vars qw($Debug);
 
 #======================================================================
 
@@ -23,7 +23,7 @@ $Debug = 0;
 my $Opt_File;
 autoflush STDOUT 1;
 autoflush STDERR 1;
-Getopt::Long::config ("no_auto_abbrev");
+Getopt::Long::config("no_auto_abbrev");
 if (! GetOptions (
 		  "help"	=> \&usage,
 		  "debug"	=> \&debug,
@@ -40,7 +40,7 @@ profcfunc($Opt_File);
 
 sub usage {
     pod2usage(-verbose=>2, -exitval=>2, -output=>\*STDOUT);
-    exit (1);
+    exit(1);
 }
 
 sub debug {
@@ -73,6 +73,14 @@ sub profcfunc {
 	    $funcs{$func}{sec} += $sec;
 	    $funcs{$func}{calls} += $calls;
 	}
+        # Older gprofs have no call column for single-call functions
+        #                  %time      cumesec   selfsec      {stuff}   name
+        elsif ($line =~ /^\s*([0-9.]+)\s+[0-9.]+\s+([0-9.]+)\s+[^a-zA-Z_]*([a-zA-Z_].*)$/) {
+            my $pct=$1; my $sec=$2; my $calls=1; my $func=$3;
+            $funcs{$func}{pct} += $pct;
+            $funcs{$func}{sec} += $sec;
+            $funcs{$func}{calls} += $calls;
+        }
     }
     $fh->close;
 
@@ -191,11 +199,11 @@ __END__
 
 =head1 NAME
 
-verilator_profcfunc - Read gprof report created with --profile-cfuncs
+verilator_profcfunc - Read gprof report created with --prof-cfuncs
 
 =head1 SYNOPSIS
 
-  verilator --profile-cfuncs ....
+  verilator --prof-cfuncs ....
   gcc --ggdb -pg ....
   {run executable}
   gprof
@@ -205,7 +213,7 @@ verilator_profcfunc - Read gprof report created with --profile-cfuncs
 
 Verilator_profcfunc reads a profile report created by gprof.  The names of
 the functions are then transformed, assuming the user used verilator's
---profile-cfuncs, and a report printed showing the percentage of time, etc,
+--prof-cfuncs, and a report printed showing the percentage of time, etc,
 in each Verilog block.
 
 =head1 ARGUMENTS
@@ -222,7 +230,7 @@ Displays this message and program version and exits.
 
 The latest version is available from L<http://www.veripool.org/>.
 
-Copyright 2007-2017 by Wilson Snyder.  Verilator is free software; you can
+Copyright 2007-2018 by Wilson Snyder.  Verilator is free software; you can
 redistribute it and/or modify it under the terms of either the GNU Lesser
 General Public License Version 3 or the Perl Artistic License Version 2.0.
 

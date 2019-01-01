@@ -7,21 +7,24 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-compile (
-	 verilator_flags2 => ['--assert --cc --coverage-user'],
-	 );
+scenarios(simulator => 1);
 
-execute (
-	 check_finished=>1,
-	 );
+compile(
+    verilator_flags2 => ['--assert --cc --coverage-user'],
+    );
+
+execute(
+    check_finished => 1,
+    );
 
 #if ($Self->{nc}) ... # See t_assert_cover.pl for NC version
 
 # Allow old Perl format dump, or new binary dump
 # Check that the hierarchy doesn't include __PVT__
 # Otherwise our coverage reports would look really ugly
-file_grep ($Self->{coverage_filename}, qr/(top\.t\.sub.*.cyc_eq_5)/)
-    if $Self->{vlt};
+if ($Self->{vlt_all}) {
+    file_grep($Self->{coverage_filename}, qr/(top\.t\.sub.*.cyc_eq_5)/)
+}
 
 ok(1);
 1;

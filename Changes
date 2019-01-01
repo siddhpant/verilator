@@ -3,7 +3,340 @@ Revision history for Verilator
 The contributors that suggested a given feature are shown in []. Thanks!
 
 
-* Verilator 3.903 devel
+* Verilator 4.008 2018-12-01
+
+***   Support "ref" and "const ref" pins and functions, bug1360. [Jake Longo]
+
+***   In --xml-only show the original unmodified names, and add module_files
+      and cells similar to Verilog-Perl, msg2719. [Kanad Kanhere]
+
+****  Add CONTASSREG error on continuous assignments to regs, bug1369. [Peter Gerst]
+
+****  Add PROCASSWIRE error on behavioral assignments to wires, msg2737. [Neil Turton]
+
+****  Add IMPORTSTAR warning on import::* inside $unit scope.
+
+****  Fix --trace-lxt2 compile error on MinGW, msg2711. [HyungKi Jeong]
+
+****  Fix hang on bad pattern keys, bug1364. [Matt Myers]
+
+****  Fix crash due to cygwin bug in getline, bug1349. [Affe Mao]
+
+****  Fix __Slow files getting compiled with OPT_FAST, bug1370. [Thomas Watts]
+
+
+* Verilator 4.006 2018-10-27
+
+**    Add --pp-comments, msg2700. [Robert Henry]
+
+**    Add --dump-defines.
+
+***   For --trace-fst, save enum decoding information, bug1358. [Sergi Granell]
+      (To visualize enumeration data you must use GTKwave 3.3.95 or newer.)
+
+***   For --trace-fst, instead of *.fst.hier, put data into *.fst. [Tony Bybell]
+
+****  Fix --trace-lxt2 compile error on MinGW, msg2667. [HyungKi Jeong]
+
+****  Fix Windows .exe not found, bug1361. [Patrick Stewart]
+
+
+* Verilator 4.004 2018-10-6
+
+**    Add GTKWave FST native tracing, bug1356. [Sergi Granell]
+      (Verilator developers need to pull the latest vcddiff.)
+
+***   Support $past. [Dan Gisselquist]
+
+***   Support restrict, bug1350. [Clifford Wolf]
+
+***   Rename include/lxt2 to include/gtkwave.
+
+****  Fix replication of 64-bit signal change detects.
+
+****  Fix Mac OSX 10.13.6 / LLVM 9.1 compile issues, bug1348. [Kevin Kiningham]
+
+****  Fix MinGW compile issues, msg2636. [HyungKi Jeong]
+
+
+* Verilator 4.002 2018-09-16
+
+**    This is a major release.  Any patches may require major rework to apply.
+      [Thanks everyone]
+
+**    Add multithreaded model generation.
+
+**    Add runtime arguments.
+
+**    Add GTKWave LXT2 native tracing, bug1333. [Yu Sheng Lin]
+
+**    Note $random has new algorithm; results may vary vs. previous versions.
+
+***   Better optimize large always block splitting, bug1244. [John Coiner]
+
+***   Add new reloop optimization for repetitive assignment compression.
+
+***   Support string.atoi and similar methods, bug1289. [Joel Holdsworth]
+
+****  Fix internals to be C++ null-pointer-check clean.
+
+****  Fix internals to avoid 'using namespace std'.
+
+****  Fix Verilation performance issues, bug1316. [John Coiner]
+
+****  Fix clocker attributes to not propagate on concats. [John Coiner]
+
+****  Fix first clock edge and --x-initial-edge, bug1327. [Rupert Swarbrick]
+
+****  Fix compile error on tracing of string arrays, bug1338. [Iztok Jeras]
+
+****  Fix number parsing with newline after radix, bug1340. [George Cuan]
+
+****  Fix string ?: conditional type resolution, bug1345. [Iztok Jeras]
+
+****  Fix duplicate symbol error on generate tri, bug1347. [Tomas Dzetkulic]
+
+
+* Verilator 3.926 2018-08-22
+
+****  Add OBJCACHE envvar support to examples and generated Makefiles.
+
+****  Change MODDUP errors to warnings, msg2588. [Marshal Qiao]
+
+****  Fix define argument stringification (`"), broke since 3.914. [Joe DErrico]
+
+****  Fix to ignore Unicode UTF-8 BOM sequences, msg2576. [HyungKi Jeong]
+
+****  Fix std:: build error, bug1322.
+
+****  Fix function inlining inside certain while loops, bug1330. [Julien Margetts]
+
+
+* Verilator 3.924 2018-06-12
+
+***   Renamed --profile-cfuncs to --prof-cfuncs.
+
+****  Report interface ports connected to wrong interface, bug1294. [Todd Strader]
+
+****  When tracing, use scalars on single bit arrays to appease vcddiff.
+
+****  Fix parsing "output signed" in V2K port list, msg2540. [James Jung]
+
+****  Fix parsing error on bad missing #, bug1308. [Dan Kirkham]
+
+****  Fix $clog2 to be in verilog 2005, bug1319. [James Hutchinson]
+
+
+* Verilator 3.922 2018-03-17
+
+**    Support IEEE 1800-2017 as default language.
+
+***   Support trig functions ($sin() etc), bug1281. [Patrick Stewart]
+
+***   Support calling system functions as tasks, bug1285. [Joel Holdsworth]
+
+***   Support assert properties, bug785, bug1290. [John Coiner, et al]
+
+***   Support $writememh. [John Coiner]
+
+***   Add --no-debug-leak to reduce memory use under debug. [John Coiner]
+
+****  Fix severe runtime performance bug in certain foreach loops. [John Coiner]
+
+****  On convergence errors, show activity. [John Coiner]
+
+****  Fix GCC 8.0 issues, bug1273.
+
+****  Fix pullup/pulldowns on bit selects, bug1274. [Rob Stoddard]
+
+****  Fix verilator_coverage --annotate-min, bug1284. [Tymoteusz Blazejczyk]
+
+****  Fix quoting of quoted arguments. [John Coiner]
+
+
+* Verilator 3.920 2018-02-01
+
+**    Moving forward, use the git "stable" branch to track the latest release,
+      and git "v#.###" tags for specific releases.
+
+***   Support 'assume' similar to 'assert', bug1269. [Dan Gisselquist]
+
+****  Fix tracing example file output, bug1268. [Enzo Chi]
+
+****  Fix gate optimization out of memory, add --gate-stmts, bug1260. [Alex Solomatnikov]
+
+****  Fix compile error on public real parameters by suppressing, bug1261. [Alex Solomatnikov]
+
+****  Fix input-only tristate comparisons, bug1267. [Alexis G]
+
+****  Fix missing edge type in xml output, msg2480. [Alexis G]
+
+****  Fix compile error with --public and interface bind, bug1264. [Alexis G]
+
+****  Remove c++filt, bug1265. [Stefan Wallentowitz]
+
+
+* Verilator 3.918 2018-01-02
+
+***   Workaround GCC/clang bug with huge compile times, bug1248.
+
+***   Support DPI open arrays, bug909, bug1245. [David Pierce, Victor Besyakov]
+
+***   Add INFINITELOOP warning, bug1254. [Alex Solomatnikov]
+
+****  Support > 64 bit decimal $display.
+
+****  Support DPI time and svLogicVal. [Victor Besyakov]
+      Note older version incorrectly assumed svBitVal even for logicals.
+
+****  Support string len() method. [Victor Besyakov]
+
+****  Add error if always_comb has sensitivity list. [Arjen Roodselaar]
+
+****  Fix SystemC 2.3.2 compile error, bug1251. [Tymoteusz Blazejczyk]
+
+****  Fix modport outputs being treated as inputs, bug1246. [Jeff Bush]
+
+****  Fix false ALWCOMBORDER on interface references, bug1247. [Josh Redford]
+
+****  Fix constant propagation across DPI imports of inout strings. [Victor Besyakov]
+
+****  Fix resolving inline nested interface names, bug1250. [Arjen Roodselaar]
+
+
+* Verilator 3.916 2017-11-25
+
+***   Support self-recursive modules, bug659. [Sean Moore, et al]
+
+***   Support $error/$warning in elaboration time blocks.
+
+***   Support $size/$bits/etc on type references.
+
+***   Add error when driving input-only modport, bug1110. [Trevor Elbourne]
+
+***   Add BSSPACE and COLONPLUS lint warnings.
+
+****  Detect MSB overflow when under VL_DEBUG, bug1238. [Junyi Xi]
+
+****  Add data types to --xml. [Rui Terra]
+
+****  Fix partial slicing with pattern assignments, bug991. [Johan Bjork]
+
+****  Fix false unused warning on interfaces, bug1241. [Laurens van Dam]
+
+****  Fix error on "unique case" with no cases.
+
+****  Fix MacOS portability, bug1232. [Jeff Bush]
+
+
+* Verilator 3.914 2017-10-14
+
+**    Added new examples/ directory with appropriate examples. This replaces the
+      old test_c and test_sc directories.
+
+***   Add --getenv option for simplifying Makefiles.
+
+***   Add --x-initial option for specifying initial value assignment behavior.
+
+***   Add --no-relative-cfuncs and related default optimization, bug1224. [John Coiner]
+
+***   Add /*verilator tag*/ for XML extraction applications. [Chris Randall]
+
+****  The internal test_verilated test directory is moved to be part of test_regress.
+
+****  The experimental VL_THREADED setting (only, not normal mode) now requires C++11.
+
+****  Fix over-aggressive inlining, bug1223. [John Coiner]
+
+****  Fix Ubuntu 17.10 issues, bug1223 partial. [John Coiner]
+
+****  Fix compiler warning when WIDTH warning ignored on large compare.
+
+****  Fix memory leak in VerilatedVcd dumps, bug1222 partial. [Shareef Jalloq]
+
+****  Fix unnecessary Vdly variables, bug1224 partial. [John Coiner]
+
+****  Fix conditional slices and add related optimizations.
+
+****  Fix `` expansion of `defines, bug1225, bug1227, bug1228. [Odd Magne Reitan]
+
+****  Fix -E duplicating output, bug1226. [Odd Magne Reitan]
+
+****  Fix float-conversion warning, bug1229. [Robert Henry]
+
+****  Fix MacOS portability, bug1230, bug1231. [Jeff Bush]
+
+
+* Verilator 3.912 2017-09-23
+
+**    Verilated headers no longer "use namespace std;"
+      User's code without "std::" prefixes may need "use namespace std;" to compile.
+
+***   Support or/and/xor array intrinsic methods, bug1210. [Mike Popoloski]
+
+***   Support package export, bug1217. [Usuario Eda]
+
+***   Fix ordering of arrayed cell wide connections, bug1202 partial. [Mike Popoloski]
+
+****  Support module port parameters without defaults, bug 1213. [Mike Popoloski]
+
+****  Add performance information to --stats file.
+
+****  Simplify VL_CONST_W macro generation for faster compiles.
+
+****  Fix LITENDIAN warning on arrayed cells, bug1202. [Mike Popoloski]
+
+****  Fix enum ranges without colons, bug1204. [Mike Popoloski]
+
+****  Fix GCC noreturn compile error, bug1209. [Mike Popoloski]
+
+****  Fix constant function default parameters, bug1211. [Mike Popoloski]
+
+****  Fix non-colon array of interface modports, bug1212. [Mike Popoloski]
+
+****  Fix .name connections on interfaces, bug1214. [Mike Popoloski]
+
+****  Fix wide array indices causing compile error.
+
+****  Better optimize Shift-And, and replication constructs.
+
+
+* Verilator 3.910 2017-09-07
+
+***   SystemPerl mode (-sp-deprecated) has been removed.
+
+****  Update keyword warnings to include C++11 and others.
+
+
+* Verilator 3.908 2017-08-28
+
+****  Support x in $readmem, bug1180. [Arthur Kahlich]
+
+****  Support packed struct DPI imports, bug1190. [Rob Stoddard]
+
+****  Fix GCC 6 warnings.
+
+****  Fix compile error on unused VL_VALUEPLUSARGS_IW, bug1181. [Thomas J Whatson]
+
+****  Fix undefined VL_POW_WWI. [Clifford Wolf]
+
+****  Fix internal error on unconnected inouts, bug1187. [Rob Stoddard]
+
+
+* Verilator 3.906 2017-06-22
+
+***   Support set_time_unit/set_time_precision in C traces, msg2261.
+
+***   Fix extract of packed array with non-zero LSB, bug1172. [James Pallister]
+
+***   Fix shifts by more than 32-bit numbers, bug1174. [Clifford Wolf]
+
+***   Fix power operator on wide constants, bug761. [Clifford Wolf]
+
+***   Fix .* on interface pins, bug1176. [Maciej Piechotka]
+
+
+* Verilator 3.904 2017-05-30
 
 ***   Fix non-cutable ordering loops on clock arrays, bug1009. [Todd Strader]
 
@@ -11,13 +344,19 @@ The contributors that suggested a given feature are shown in []. Thanks!
 
 ***   Support arrayed parameter overrides, bug1153. [John Stevenson]
 
+***   Support $value$plusargs with variables, bug1165. [Wesley Terpstra]
+
 ****  Support modport access to un-modport objects, bug1161. [Todd Strader]
 
 ****  Add stack trace when can't optimize function, bug1158. [Todd Strader]
 
 ****  Add warning on mis-sized literal, bug1156. [Todd Strader]
 
+****  Fix interface functions returning wrong parameters, bug996. [Todd Strader]
+
 ****  Fix non-arrayed cells with interface arrays, bug1153. [John Stevenson]
+
+****  Fix --assert with complex case statements, bug1164. [Enzo Chi]
 
 
 * Verilator 3.902 2017-04-02
@@ -1969,7 +2308,7 @@ Bug fixes:
 
 * Verilator 3.501 2005/11/16 Stable
 
-***  Add --profile-cfuncs for correlating profiles back to Verilog.
+***  Add --prof-cfuncs for correlating profiles back to Verilog.
 
 **** Fixed functions where regs are declared before inputs.  [Danny Ding]
 
@@ -2837,7 +3176,7 @@ of input ports exists for tracing.
 
 This uses outline mode in Emacs.  See C-h m [M-x describe-mode].
 
-Copyright 2001-2017 by Wilson Snyder.  This program is free software; you
+Copyright 2001-2018 by Wilson Snyder.  This program is free software; you
 can redistribute it and/or modify it under the terms of either the GNU
 Lesser General Public License Version 3 or the Perl Artistic License
 Version 2.0.

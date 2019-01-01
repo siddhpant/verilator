@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,6 +23,7 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include <map>
 #include <vector>
 
@@ -66,8 +67,8 @@ public:
 class VlcSource {
 public:
     // TYPES
-    typedef map<int,VlcSourceCount> ColumnMap;	// Map of {column}
-    typedef map<int,ColumnMap> LinenoMap;	// Map of {lineno}{column}
+    typedef std::map<int,VlcSourceCount> ColumnMap;  // Map of {column}
+    typedef std::map<int,ColumnMap> LinenoMap;  // Map of {lineno}{column}
 
 private:
     // MEMBERS
@@ -111,7 +112,7 @@ public:
 class VlcSources {
 public:
     // TYPES
-    typedef map<string,VlcSource> NameMap;
+    typedef std::map<string,VlcSource> NameMap;
 private:
     // MEMBERS
     NameMap	m_sources;	//< List of all sources

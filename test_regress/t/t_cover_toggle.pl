@@ -7,19 +7,21 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-compile (
-	 verilator_flags2 => ['--cc --coverage-toggle --stats'],
-	 );
+scenarios(simulator => 1);
 
-execute (
-	 check_finished=>1,
-	 );
+compile(
+    verilator_flags2 => ['--cc --coverage-toggle --stats'],
+    );
+
+execute(
+    check_finished => 1,
+    );
 
 # Read the input .v file and do any CHECK_COVER requests
 inline_checks();
 
 file_grep ($Self->{stats}, qr/Coverage, Toggle points joined\s+(\d+)/i, 25)
-    if $Self->{vlt};
+    if $Self->{vlt_all};
 
 ok(1);
 1;

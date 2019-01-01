@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -25,7 +25,6 @@
 #include "V3String.h"
 #include "V3Error.h"
 
-
 size_t VName::s_minLength = 32;
 size_t VName::s_maxLength = 0;	// Disabled
 
@@ -42,9 +41,11 @@ inline bool VString::wildmatchi(const char* s, const char* p) {
 	else {
 	    // Trailing star matches everything.
 	    if (!*++p) return true;
-	    while (wildmatch(s, p) == false)
-		if (*++s == '\0')
-		    return false;
+            while (!wildmatch(s, p)) {
+                if (*++s == '\0') {
+                    return false;
+                }
+            }
 	    return true;
 	}
     }
@@ -60,13 +61,21 @@ bool VString::wildmatch(const char* s, const char* p) {
 	else {
 	    // Trailing star matches everything.
 	    if (!*++p) return true;
-	    while (wildmatchi(s, p) == false)
-		if (*++s == '\0')
-		    return false;
+            while (!wildmatchi(s, p)) {
+                if (*++s == '\0') {
+                    return false;
+                }
+            }
 	    return true;
 	}
     }
     return (*s == '\0');
+}
+
+string VString::dot(const string& a, const string& dot, const string& b) {
+    if (b=="") return a;
+    if (a=="") return b;
+    return a+dot+b;
 }
 
 string VString::downcase(const string& str) {
@@ -144,15 +153,15 @@ void VHashSha1::insert(const void* datap, size_t length) {
     int chunkLen;
     const uint8_t* chunkp;
     if (m_remainder=="") {
-	chunkLen = length;
-	chunkp = (const uint8_t*)datap;
+        chunkLen = length;
+        chunkp = static_cast<const uint8_t*>(datap);
     } else {
 	// If there are large inserts it would be more efficient to avoid this copy
 	// by copying bytes in the loop below from either m_remainder or the data
 	// as appropriate.
-	tempData = m_remainder + string((const char*)datap,length);
-	chunkLen = tempData.length();
-	chunkp = (const uint8_t*)tempData.data();
+        tempData = m_remainder + string(static_cast<const char*>(datap), length);
+        chunkLen = tempData.length();
+        chunkp = reinterpret_cast<const uint8_t*>(tempData.data());
     }
 
     // See wikipedia SHA-1 algorithm summary
@@ -165,15 +174,15 @@ void VHashSha1::insert(const void* datap, size_t length) {
 	posEnd = posBegin + 64;
 	// 64 byte round input data, being careful to swap on big, keep on little
 	for (int roundByte = 0; posBegin < posEnd; posBegin += 4) {
-	    w[roundByte++] = ((uint32_t) chunkp[posBegin + 3]
-			      | (((uint32_t) chunkp[posBegin + 2]) << 8)
-			      | (((uint32_t) chunkp[posBegin + 1]) << 16)
-			      | (((uint32_t) chunkp[posBegin]) << 24));
+            w[roundByte++] = (static_cast<uint32_t>(chunkp[posBegin + 3])
+                              | (static_cast<uint32_t>(chunkp[posBegin + 2]) << 8)
+                              | (static_cast<uint32_t>(chunkp[posBegin + 1]) << 16)
+                              | (static_cast<uint32_t>(chunkp[posBegin]) << 24));
 	}
 	sha1Block(m_inthash, w);
     }
 
-    m_remainder = string((const char*)(chunkp+posBegin), chunkLen-posEnd);
+    m_remainder = string(reinterpret_cast<const char*>(chunkp+posBegin), chunkLen-posEnd);
 }
 
 void VHashSha1::finalize() {
@@ -187,7 +196,8 @@ void VHashSha1::finalize() {
 	for (int i=0; i<16; ++i) w[i] = 0;
 	size_t blockPos = 0;
 	for (; blockPos < m_remainder.length(); ++blockPos) {
-	    w[blockPos >> 2] |= ((uint32_t) m_remainder[blockPos]) << ((3 - (blockPos & 3)) << 3);
+            w[blockPos >> 2] |= ((static_cast<uint32_t>(m_remainder[blockPos]))
+                                 << ((3 - (blockPos & 3)) << 3));
 	}
 	w[blockPos >> 2] |= 0x80 << ((3 - (blockPos & 3)) << 3);
 	if (m_remainder.length() >= 56) {
@@ -205,7 +215,7 @@ string VHashSha1::digestBinary() {
     finalize();
     string out; out.reserve(20);
     for (size_t i=0; i<20; ++i) {
-	out[i] = (m_inthash[i >> 2] >> (((3 - i) & 0x3) << 3)) & 0xff;
+        out += (m_inthash[i >> 2] >> (((3 - i) & 0x3) << 3)) & 0xff;
     }
     return out;
 }
@@ -214,7 +224,8 @@ uint64_t VHashSha1::digestUInt64() {
     const string& binhash = digestBinary();
     uint64_t out = 0;
     for (size_t byte=0; byte<sizeof(uint64_t); ++byte) {
-	out = (out<<8) | binhash[byte];
+        unsigned char c = binhash[byte];
+        out = (out<<8) | c;
     }
     return out;
 }
@@ -242,9 +253,9 @@ string VHashSha1::digestSymbol() {
     for (; pos < (160/8) - 2; pos += 3) {
 	out += digits[((binhash[pos] >> 2) & 0x3f)];
 	out += digits[((binhash[pos] & 0x3) << 4)
-		      | ((int) (binhash[pos + 1] & 0xf0) >> 4)];
+                      | (static_cast<int>(binhash[pos + 1] & 0xf0) >> 4)];
 	out += digits[((binhash[pos + 1] & 0xf) << 2)
-		      | ((int) (binhash[pos + 2] & 0xc0) >> 6)];
+                      | (static_cast<int>(binhash[pos + 2] & 0xc0) >> 6)];
 	out += digits[((binhash[pos + 2] & 0x3f))];
     }
     if (0) { // Not needed for 160 bit hash
@@ -254,7 +265,7 @@ string VHashSha1::digestSymbol() {
     else {
 	out += digits[((binhash[pos] >> 2) & 0x3f)];
 	out += digits[((binhash[pos] & 0x3) << 4)
-		      | ((int) (binhash[pos + 1] & 0xf0) >> 4)];
+                      | (static_cast<int>(binhash[pos + 1] & 0xf0) >> 4)];
 	out += digits[((binhash[pos + 1] & 0xf) << 2)];
     }
     return out;
@@ -265,14 +276,14 @@ void VHashSha1::selfTestOne(const string& data, const string& data2,
     VHashSha1 digest (data);
     if (data2!="") digest.insert(data2);
     if (digest.digestHex() != exp) {
-	cerr << "%Error: When hashing '"<<data+data2<<"'"<<endl;
-	cerr << "%Error: got="<<digest.digestHex()<<endl;
-	cerr << "%Error: exp="<<exp<<endl;
+        std::cerr << "%Error: When hashing '"<<data+data2<<"'"<<endl;
+        std::cerr << "%Error: got="<<digest.digestHex()<<endl;
+        std::cerr << "%Error: exp="<<exp<<endl;
     }
     if (digest.digestSymbol() != exp64) {
-	cerr << "%Error: When hashing '"<<data+data2<<"'"<<endl;
-	cerr << "%Error: got="<<digest.digestSymbol()<<endl;
-	cerr << "%Error: exp="<<exp64<<endl;
+        std::cerr << "%Error: When hashing '"<<data+data2<<"'"<<endl;
+        std::cerr << "%Error: got="<<digest.digestSymbol()<<endl;
+        std::cerr << "%Error: exp="<<exp64<<endl;
     }
 }
 

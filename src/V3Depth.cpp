@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -29,14 +29,13 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <algorithm>
 
 #include "V3Global.h"
 #include "V3Depth.h"
 #include "V3Ast.h"
+
+#include <algorithm>
+#include <cstdarg>
 
 //######################################################################
 
@@ -52,32 +51,28 @@ private:
     int			m_maxdepth;	// Maximum depth in an expression
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void createDeepTemp(AstNode* nodep) {
 	UINFO(6,"  Deep  "<<nodep<<endl);
 	//if (debug()>=9) nodep->dumpTree(cout,"deep:");
 
-	string newvarname = ((string)"__Vdeeptemp"+cvtToStr(m_modp->varNumGetInc()));
-	AstVar* varp = new AstVar (nodep->fileline(), AstVarType::STMTTEMP, newvarname,
-				   // Width, not widthMin, as we may be in middle of BITSEL expression which
-				   // though it's one bit wide, needs the mask in the upper bits.
-				   // (Someday we'll have a valid bitmask instead of widths....)
-				   // See t_func_crc for an example test that requires this
-				   VFlagLogicPacked(), nodep->width());
+        string newvarname = (string("__Vdeeptemp")+cvtToStr(m_modp->varNumGetInc()));
+        AstVar* varp = new AstVar(nodep->fileline(), AstVarType::STMTTEMP, newvarname,
+                                  // Width, not widthMin, as we may be in middle of BITSEL expression which
+                                  // though it's one bit wide, needs the mask in the upper bits.
+                                  // (Someday we'll have a valid bitmask instead of widths....)
+                                  // See t_func_crc for an example test that requires this
+                                  VFlagLogicPacked(), nodep->width());
 	if (!m_funcp) nodep->v3fatalSrc("Deep expression not under a function");
 	m_funcp->addInitsp(varp);
 	// Replace node tree with reference to var
-	AstVarRef* newp = new AstVarRef (nodep->fileline(), varp, false);
+        AstVarRef* newp = new AstVarRef(nodep->fileline(), varp, false);
 	nodep->replaceWith(newp);
 	// Put assignment before the referencing statement
-	AstAssign* assp = new AstAssign (nodep->fileline(),
-					 new AstVarRef(nodep->fileline(), varp, true),
-					 nodep);
+        AstAssign* assp = new AstAssign(nodep->fileline(),
+                                        new AstVarRef(nodep->fileline(), varp, true),
+                                        nodep);
 	AstNRelinker linker2;
 	m_stmtp->unlinkFrBack(&linker2);
 	assp->addNext(m_stmtp);
@@ -89,21 +84,21 @@ private:
 	UINFO(4," MOD   "<<nodep<<endl);
 	m_modp = nodep;
 	m_funcp = NULL;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_modp = NULL;
     }
     virtual void visit(AstCFunc* nodep) {
 	m_funcp = nodep;
 	m_depth = 0;
 	m_maxdepth = 0;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_funcp = NULL;
     }
     void visitStmt(AstNodeStmt* nodep) {
 	m_depth = 0;
 	m_maxdepth = 0;
 	m_stmtp = nodep;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_stmtp = NULL;
     }
     virtual void visit(AstNodeStmt* nodep) {
@@ -116,13 +111,13 @@ private:
 	// We have some operator defines that use 2 parens, so += 2.
 	m_depth += 2;
 	if (m_depth>m_maxdepth) m_maxdepth=m_depth;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	m_depth -= 2;
 
 	if (m_stmtp
 	    && (v3Global.opt.compLimitParens() >= 1)	// Else compiler doesn't need it
 	    && (m_maxdepth-m_depth) > v3Global.opt.compLimitParens()
-	    && !nodep->backp()->castNodeStmt()  // Not much point if we're about to use it
+            && !VN_IS(nodep->backp(), NodeStmt)  // Not much point if we're about to use it
 	    ) {
 	    m_maxdepth = m_depth;
 	    createDeepTemp(nodep);
@@ -141,7 +136,7 @@ private:
     }
     virtual void visit(AstUCFunc* nodep) {
 	needNonStaticFunc(nodep);
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
     virtual void visit(AstUCStmt* nodep) {
 	needNonStaticFunc(nodep);
@@ -152,7 +147,7 @@ private:
     // Default: Just iterate
     virtual void visit(AstVar* nodep) {}	// Don't hit varrefs under vars
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 
 public:
@@ -164,7 +159,7 @@ public:
 	m_depth=0;
 	m_maxdepth=0;
 	//
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~DepthVisitor() {}
 };
@@ -174,6 +169,8 @@ public:
 
 void V3Depth::depthAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DepthVisitor visitor (nodep);
-    V3Global::dumpCheckGlobalTree("depth.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
+    {
+        DepthVisitor visitor (nodep);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("depth", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
 }

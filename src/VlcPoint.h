@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,10 +23,12 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
+
 #include "verilated_cov_key.h"
-#include <map>
+
 #include <vector>
 #include <iomanip>
+#include VL_INCLUDE_UNORDERED_MAP
 
 //********************************************************************
 // VlcPoint - A coverage point (across all tests)
@@ -85,9 +87,9 @@ public:
 	cout<<"  Num,    TestsCover,    Count,  Name"<<endl;
     }
     void dump() const {
-	cout<<"  "<<setw(8)<<setfill('0')<<pointNum()
-	    <<",  "<<setw(7)<<setfill(' ')<<testsCovering()
-	    <<",  "<<setw(7)<<setfill(' ')<<count()
+        cout<<"  "<<std::setw(8)<<std::setfill('0')<<pointNum()
+            <<",  "<<std::setw(7)<<std::setfill(' ')<<testsCovering()
+            <<",  "<<std::setw(7)<<std::setfill(' ')<<count()
 	    <<",  \""<<name()<<"\""<<endl;
     }
 };
@@ -98,10 +100,10 @@ public:
 class VlcPoints {
 private:
     // MEMBERS
-    typedef std::map<string,vluint64_t> NameMap;
-    NameMap		m_nameMap;	//< Name to point-number
-    vector<VlcPoint>	m_points;	//< List of all points
-    vluint64_t		m_numPoints;	//< Total unique points
+    typedef std::map<string,vluint64_t> NameMap;  // Sorted by name (ordered)
+    NameMap m_nameMap;  //< Name to point-number
+    std::vector<VlcPoint> m_points;  //< List of all points
+    vluint64_t m_numPoints;  //< Total unique points
 
 public:
     // ITERATORS

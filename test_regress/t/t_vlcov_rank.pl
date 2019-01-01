@@ -7,17 +7,20 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
 
-$Self->{vlt} or $Self->skip("Verilator only test");
+scenarios(dist => 1);
 
-$Self->_run(cmd=>["../bin/verilator_coverage",
-		  "--rank",
-		  "t/t_vlcov_data_a.dat",
-		  "t/t_vlcov_data_b.dat",
-		  "t/t_vlcov_data_c.dat",
-		  "t/t_vlcov_data_d.dat",
-	    ],
-	    logfile=>"$Self->{obj_dir}/vlcov.log",
-	    tee => 0,
+run(cmd => ["../bin/verilator_coverage",
+            "--rank",
+            "t/t_vlcov_data_a.dat",
+            "t/t_vlcov_data_b.dat",
+            "t/t_vlcov_data_c.dat",
+            "t/t_vlcov_data_d.dat",
+    ],
+    logfile => "$Self->{obj_dir}/vlcov.log",
+    tee => 0,
     );
-ok(files_identical("$Self->{obj_dir}/vlcov.log", "t/$Self->{name}.out"));
+
+files_identical("$Self->{obj_dir}/vlcov.log", "t/$Self->{name}.out");
+
+ok(1);
 1;

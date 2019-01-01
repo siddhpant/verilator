@@ -52,27 +52,29 @@ sub process {
     $fh or die "%Error: '$cmd' failed: $!\n";
     my %uniq;
     my %errs;
+    my $last_error = "";
     while (defined(my $line = $fh->getline())) {
 	$line =~ s/^\s+//;
 	$line =~ s/Checking usage of global functions\.+//;  # Sometimes tacked at end-of-line
 	# General gunk
 	next if $uniq{$line}++;
 	next if $line =~ m!^<\?xml version!;
-	next if $line =~ m!^<results>!;
+	next if $line =~ m!^<cppcheck!;
+	next if $line =~ m!^<results!;
 	next if $line =~ m!^</results>!;
+	next if $line =~ m!^<errors!;
+	next if $line =~ m!^</error>!;
+	next if $line =~ m!^</errors>!;
 	next if $line =~ m!^<error.*id="unmatchedSuppression"!;  # --suppress=unmatchedSuppression doesn't work
 	next if $line =~ m!Cppcheck cannot find all the include files!; # An earlier id line is more specific
 	next if $line =~ m!^Checking !;
 	next if $line =~ m!^make.*Entering directory !;
 	next if $line =~ m!^make.*Leaving directory !;
 	next if $line =~ m!^\s+$!g;
-	# Specific suppressions
-	next if $line =~ m!id="missingInclude" .*systemc.h!;
-	next if $line =~ m!id="missingInclude" .*svdpi.h!;
-	next if $line =~ m!id="unusedFunction" .*sv! && $line =~ m!verilated_dpi.cpp!;
-	next if $line =~ m!id="unusedFunction" .*vpi! && $line =~ m!verilated_vpi.cpp!;
-	next if $line =~ m!id="unusedPrivateFunction" .*::debug!;  # Doesn't know UINFO will use it
-	next if $line =~ m!file=".*obj_dbg/V3ParseBison.c".* id="unreachableCode"!;
+
+        # Specific suppressions (see _suppress also)
+        next if $line =~ m!id="unusedPrivateFunction" .*::debug!;  # Doesn't know UINFO will use it
+
 	# Output
 	if ($line =~ /^cppcheck --/) {
 	    print $line if $Debug;
@@ -80,9 +82,31 @@ sub process {
 	    print $line;
 	} else {
 	    my $suppress;
+	    # --xml-format=1
 	    if ($line =~ /file="([^"]+)"\s+line="(\d+)"\s+id="([^"]+)"/) {
 		my $file = $1; my $linenum = $2; my $id = $3;
 		$suppress = 1 if _suppress($file,$linenum,$id);
+	    }
+	    # --xml-format=2
+	    if ($line =~ /<error id.*/) {
+		$last_error = $line;
+		chomp $last_error;
+		$suppress = 1;
+	    }
+	    elsif ($line =~ /<location.* file="([^"]+)"\s+line="(\d+)"/) {
+		my $file = $1; my $linenum = $2; my $id;
+		if ($last_error =~ / id="([^"]+)"/) {
+		    $id = $1;
+		} else {
+		    $id = "?";
+		}
+		$suppress = 1 if _suppress($file,$linenum,$id);
+		$suppress = 1 if $file eq "*";
+		if (!$suppress) {
+		    chomp $line;
+		    print "$file:$linenum: ".$last_error."\n";
+		    $suppress = 1;
+		}
 	    }
 	    if (!$suppress) {
 		my $eline = "%Error: cppcheck: $line";
@@ -109,6 +133,15 @@ sub _suppress {
 
     return undef if $filename eq "*";
 
+    # Specific suppressions
+    return 1 if $id eq "missingInclude" && $filename =~ m!systemc.h!;
+    return 1 if $id eq "missingInclude" && $filename =~ m!svdpi.h!;
+    return 1 if $id eq "unusedFunction" && $filename =~ m!verilated_dpi.cpp!;
+    return 1 if $id eq "unusedFunction" && $filename =~ m!verilated_vpi.cpp!;
+    return 1 if $id eq "unreachableCode" && $filename =~ /V3ParseBison.c/;
+    return 1 if $id eq 'variableScope' && $filename =~ /fstapi.c/;
+    return 1 if $id eq 'variableScope' && $filename =~ /lxt2_write.c/;
+
     my $fh = IO::File->new("<$filename");
     if (!$fh) {
 	warn "%Warning: $! $filename,";
@@ -122,7 +155,7 @@ sub _suppress {
 		my $supids = $1;
 		foreach my $supid (split /\s+/, $supids) {
 		    if ($supid eq $id
-			|| $supid eq $SuppressMap{$id}) {
+			|| $supid eq ($SuppressMap{$id}||'')) {
 			return 1;
 		    }
 		}
@@ -184,7 +217,7 @@ This is part of the L<http://www.veripool.org/> free Verilog EDA software
 tool suite.  The latest version is available from CPAN and from
 L<http://www.veripool.org/>.
 
-Copyright 2014-2017 by Wilson Snyder.  This package is free software; you
+Copyright 2014-2018 by Wilson Snyder.  This package is free software; you
 can redistribute it and/or modify it under the terms of either the GNU
 Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
 

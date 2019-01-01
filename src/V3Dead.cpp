@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -40,15 +40,14 @@
 
 #include "config_build.h"
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <unistd.h>
-#include <vector>
-#include <map>
 
 #include "V3Global.h"
 #include "V3Dead.h"
 #include "V3Ast.h"
+
+#include <cstdarg>
+#include <map>
+#include <vector>
 
 //######################################################################
 
@@ -59,18 +58,18 @@ private:
     // ** Shared with DeadVisitor **
     // VISITORS
     virtual void visit(AstCell* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	nodep->modp()->user1Inc(-1);
     }
     //-----
     virtual void visit(AstNodeMath* nodep) {}  // Accelerate
     virtual void visit(AstNode* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
     }
 public:
     // CONSTRUCTORS
     explicit DeadModVisitor(AstNodeModule* nodep) {
-	nodep->accept(*this);
+        iterate(nodep);
     }
     virtual ~DeadModVisitor() {}
 };
@@ -89,15 +88,15 @@ private:
     AstUser1InUse	m_inuser1;
 
     // TYPES
-    typedef multimap<AstVarScope*,AstNodeAssign*>	AssignMap;
+    typedef std::multimap<AstVarScope*,AstNodeAssign*>  AssignMap;
 
     // STATE
     AstNodeModule*		m_modp;		// Current module
-    vector<AstVar*>		m_varsp;	// List of all encountered to avoid another loop through tree
-    vector<AstNode*>		m_dtypesp;	// List of all encountered to avoid another loop through tree
-    vector<AstVarScope*>	m_vscsp;	// List of all encountered to avoid another loop through tree
-    vector<AstScope*>		m_scopesp;	// List of all encountered to avoid another loop through tree
-    vector<AstCell*>		m_cellsp;	// List of all encountered to avoid another loop through tree
+    std::vector<AstVar*>        m_varsp;        // List of all encountered to avoid another loop through tree
+    std::vector<AstNode*>       m_dtypesp;      // List of all encountered to avoid another loop through tree
+    std::vector<AstVarScope*>   m_vscsp;        // List of all encountered to avoid another loop through tree
+    std::vector<AstScope*>      m_scopesp;      // List of all encountered to avoid another loop through tree
+    std::vector<AstCell*>       m_cellsp;       // List of all encountered to avoid another loop through tree
     AssignMap			m_assignMap;	// List of all simple assignments for each variable
     bool			m_elimUserVars;	// Allow removal of user's vars
     bool			m_elimDTypes;	// Allow removal of DTypes
@@ -106,11 +105,7 @@ private:
     bool			m_sideEffect;	// Side effects discovered in assign RHS
 
     // METHODS
-    static int debug() {
-	static int level = -1;
-	if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel(__FILE__);
-	return level;
-    }
+    VL_DEBUG_FUNC;  // Declare debug()
 
     void checkAll(AstNode* nodep) {
 	if (nodep != nodep->dtypep()) {	 // NodeDTypes reference themselves
@@ -125,7 +120,7 @@ private:
     void checkDType(AstNodeDType* nodep) {
 	if (!nodep->generic()  // Don't remove generic types
 	    && m_elimDTypes  // dtypes stick around until post-widthing
-	    && !nodep->castMemberDType() // Keep member names iff upper type exists
+            && !VN_IS(nodep, MemberDType)  // Keep member names iff upper type exists
 	    ) {
 	    m_dtypesp.push_back(nodep);
 	}
@@ -137,17 +132,19 @@ private:
     // VISITORS
     virtual void visit(AstNodeModule* nodep) {
 	m_modp = nodep;
-	nodep->iterateChildren(*this);
-	checkAll(nodep);
+	if (!nodep->dead()) {
+            iterateChildren(nodep);
+	    checkAll(nodep);
+	}
 	m_modp = NULL;
     }
     virtual void visit(AstCFunc* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
 	if (nodep->scopep()) nodep->scopep()->user1Inc();
     }
     virtual void visit(AstScope* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
 	if (nodep->aboveScopep()) nodep->aboveScopep()->user1Inc();
 
@@ -156,14 +153,14 @@ private:
 	}
     }
     virtual void visit(AstCell* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
 	m_cellsp.push_back(nodep);
 	nodep->modp()->user1Inc();
     }
 
     virtual void visit(AstNodeVarRef* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
 	if (nodep->varScopep()) {
 	    nodep->varScopep()->user1Inc();
@@ -178,7 +175,7 @@ private:
 	}
     }
     virtual void visit(AstNodeFTaskRef* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
 	if (nodep->packagep()) {
 	    if (m_elimCells) nodep->packagep(NULL);
@@ -186,7 +183,7 @@ private:
 	}
     }
     virtual void visit(AstRefDType* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkDType(nodep);
 	checkAll(nodep);
 	if (nodep->packagep()) {
@@ -195,12 +192,12 @@ private:
 	}
     }
     virtual void visit(AstNodeDType* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkDType(nodep);
 	checkAll(nodep);
     }
     virtual void visit(AstEnumItemRef* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
 	if (nodep->packagep()) {
 	    if (m_elimCells) nodep->packagep(NULL);
@@ -209,7 +206,7 @@ private:
 	checkAll(nodep);
     }
     virtual void visit(AstModport* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	if (m_elimCells) {
 	    if (!nodep->varsp()) {
 		pushDeletep(nodep->unlinkFrBack()); VL_DANGLING(nodep);
@@ -219,7 +216,7 @@ private:
 	checkAll(nodep);
     }
     virtual void visit(AstTypedef* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	if (m_elimCells && !nodep->attrPublic()) {
 	    pushDeletep(nodep->unlinkFrBack()); VL_DANGLING(nodep);
 	    return;
@@ -227,10 +224,10 @@ private:
 	checkAll(nodep);
 	// Don't let packages with only public variables disappear
 	// Normal modules may disappear, e.g. if they are parameterized then removed
-	if (nodep->attrPublic() && m_modp && m_modp->castPackage()) m_modp->user1Inc();
+        if (nodep->attrPublic() && m_modp && VN_IS(m_modp, Package)) m_modp->user1Inc();
     }
     virtual void visit(AstVarScope* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
 	if (nodep->scopep()) nodep->scopep()->user1Inc();
 	if (mightElimVar(nodep->varp())) {
@@ -238,9 +235,9 @@ private:
 	}
     }
     virtual void visit(AstVar* nodep) {
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
-	if (nodep->isSigPublic() && m_modp && m_modp->castPackage()) m_modp->user1Inc();
+        if (nodep->isSigPublic() && m_modp && VN_IS(m_modp, Package)) m_modp->user1Inc();
 	if (mightElimVar(nodep)) {
 	    m_varsp.push_back(nodep);
 	}
@@ -249,16 +246,16 @@ private:
 	// See if simple assignments to variables may be eliminated because that variable is never used.
 	// Similar code in V3Life
 	m_sideEffect = false;
-	nodep->rhsp()->iterateAndNext(*this);
+        iterateAndNextNull(nodep->rhsp());
 	checkAll(nodep);
 	// Has to be direct assignment without any EXTRACTing.
-	AstVarRef* varrefp = nodep->lhsp()->castVarRef();
+        AstVarRef* varrefp = VN_CAST(nodep->lhsp(), VarRef);
 	if (varrefp && !m_sideEffect
 	    && varrefp->varScopep()) {	// For simplicity, we only remove post-scoping
 	    m_assignMap.insert(make_pair(varrefp->varScopep(), nodep));
 	    checkAll(varrefp);	// Must track reference to dtype()
 	} else {  // Track like any other statement
-	    nodep->lhsp()->iterateAndNext(*this);
+            iterateAndNextNull(nodep->lhsp());
 	}
 	checkAll(nodep);
     }
@@ -266,7 +263,7 @@ private:
     //-----
     virtual void visit(AstNode* nodep) {
 	if (nodep->isOutputter()) m_sideEffect=true;
-	nodep->iterateChildren(*this);
+        iterateChildren(nodep);
 	checkAll(nodep);
     }
 
@@ -279,13 +276,15 @@ private:
 	    retry=false;
 	    AstNodeModule* nextmodp;
 	    for (AstNodeModule* modp = v3Global.rootp()->modulesp(); modp; modp=nextmodp) {
-		nextmodp = modp->nextp()->castNodeModule();
-		if (modp->level()>2	&& modp->user1()==0 && !modp->internal()) {
+                nextmodp = VN_CAST(modp->nextp(), NodeModule);
+		if (modp->dead() || (modp->level()>2 && modp->user1()==0 && !modp->internal())) {
 		    // > 2 because L1 is the wrapper, L2 is the top user module
 		    UINFO(4,"  Dead module "<<modp<<endl);
 		    // And its children may now be killable too; correct counts
 		    // Recurse, as cells may not be directly under the module but in a generate
-		    DeadModVisitor visitor(modp);
+		    if (!modp->dead()) {  // If was dead didn't increment user1's
+			DeadModVisitor visitor(modp);
+		    }
 		    modp->unlinkFrBack()->deleteTree(); VL_DANGLING(modp);
 		    retry = true;
 		}
@@ -303,12 +302,12 @@ private:
     void deadCheckScope() {
 	for (bool retry=true; retry; ) {
 	    retry = false;
-	    for (vector<AstScope*>::iterator it = m_scopesp.begin(); it != m_scopesp.end();++it) {
+            for (std::vector<AstScope*>::iterator it = m_scopesp.begin(); it != m_scopesp.end();++it) {
 		AstScope* scp = *it;
 		if (!scp)
 		    continue;
 		if (scp->user1() == 0) {
-		    UINFO(4, "	Dead AstScope " << scp << endl);
+                    UINFO(4, "  Dead AstScope " << scp << endl);
 		    scp->aboveScopep()->user1Inc(-1);
 		    if (scp->dtypep()) {
 			scp->dtypep()->user1Inc(-1);
@@ -322,7 +321,7 @@ private:
     }
 
     void deadCheckCells() {
-	for (vector<AstCell*>::iterator it = m_cellsp.begin(); it!=m_cellsp.end(); ++it) {
+        for (std::vector<AstCell*>::iterator it = m_cellsp.begin(); it!=m_cellsp.end(); ++it) {
 	    AstCell* cellp = *it;
 	    if (cellp->user1() == 0 && !cellp->modp()->stmtsp()) {
 		cellp->modp()->user1Inc(-1);
@@ -333,14 +332,14 @@ private:
 
     void deadCheckVar() {
 	// Delete any unused varscopes
-	for (vector<AstVarScope*>::iterator it = m_vscsp.begin(); it!=m_vscsp.end(); ++it) {
+        for (std::vector<AstVarScope*>::iterator it = m_vscsp.begin(); it!=m_vscsp.end(); ++it) {
 	    AstVarScope* vscp = *it;
 	    if (vscp->user1() == 0) {
 		UINFO(4,"  Dead "<<vscp<<endl);
-		pair <AssignMap::iterator,AssignMap::iterator> eqrange = m_assignMap.equal_range(vscp);
-		for (AssignMap::iterator it = eqrange.first; it != eqrange.second; ++it) {
-		    AstNodeAssign* assp = it->second;
-		    UINFO(4,"	 Dead assign "<<assp<<endl);
+                std::pair<AssignMap::iterator,AssignMap::iterator> eqrange = m_assignMap.equal_range(vscp);
+		for (AssignMap::iterator itr = eqrange.first; itr != eqrange.second; ++itr) {
+		    AstNodeAssign* assp = itr->second;
+                    UINFO(4,"    Dead assign "<<assp<<endl);
 		    assp->dtypep()->user1Inc(-1);
 		    assp->unlinkFrBack()->deleteTree(); VL_DANGLING(assp);
 		}
@@ -351,12 +350,12 @@ private:
 	}
 	for (bool retry=true; retry; ) {
 	    retry = false;
-	    for (vector<AstVar *>::iterator it = m_varsp.begin(); it != m_varsp.end();++it) {
+            for (std::vector<AstVar *>::iterator it = m_varsp.begin(); it != m_varsp.end();++it) {
 		AstVar* varp = *it;
 		if (!varp)
 		    continue;
 		if (varp->user1() == 0) {
-		    UINFO(4, "	Dead " << varp << endl);
+                    UINFO(4, "  Dead " << varp << endl);
 		    if (varp->dtypep()) {
 			varp->dtypep()->user1Inc(-1);
 		    }
@@ -366,15 +365,16 @@ private:
 		}
 	    }
 	}
-	for (vector<AstNode*>::iterator it = m_dtypesp.begin(); it != m_dtypesp.end();++it) {
+        for (std::vector<AstNode*>::iterator it = m_dtypesp.begin(); it != m_dtypesp.end();++it) {
 	    if ((*it)->user1() == 0) {
 		AstNodeClassDType *classp;
 		// It's possible that there if a reference to each individual member, but
 		// not to the dtype itself.  Check and don't remove the parent dtype if
 		// members are still alive.
-		if ((classp = (*it)->castNodeClassDType())) {
+                if ((classp = VN_CAST((*it), NodeClassDType))) {
 		    bool cont = true;
-		    for (AstMemberDType *memberp = classp->membersp(); memberp; memberp = memberp->nextp()->castMemberDType()) {
+                    for (AstMemberDType *memberp = classp->membersp();
+                         memberp; memberp = VN_CAST(memberp->nextp(), MemberDType)) {
 			if (memberp->user1() != 0) {
 			    cont = false;
 			    break;
@@ -400,7 +400,7 @@ public:
 	// Prepare to remove some datatypes
 	nodep->typeTablep()->clearCache();
 	// Operate on whole netlist
-	nodep->accept(*this);
+        iterate(nodep);
 
 	deadCheckVar();
 	// We only elimate scopes when in a flattened structure
@@ -421,30 +421,40 @@ public:
 
 void V3Dead::deadifyModules(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DeadVisitor visitor (nodep, false, false, false, false);
-    V3Global::dumpCheckGlobalTree("deadModules.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
+    {
+        DeadVisitor visitor (nodep, false, false, false, false);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("deadModules", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 6);
 }
 
 void V3Dead::deadifyDTypes(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DeadVisitor visitor (nodep, false, true, false, false);
-    V3Global::dumpCheckGlobalTree("deadDtypes.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        DeadVisitor visitor (nodep, false, true, false, false);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("deadDtypes", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }
 
 void V3Dead::deadifyDTypesScoped(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DeadVisitor visitor (nodep, false, true, true, false);
-    V3Global::dumpCheckGlobalTree("deadDtypesScoped.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        DeadVisitor visitor (nodep, false, true, true, false);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("deadDtypesScoped", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }
 
 void V3Dead::deadifyAll(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DeadVisitor visitor (nodep, true, true, false, true);
-    V3Global::dumpCheckGlobalTree("deadAll.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        DeadVisitor visitor (nodep, true, true, false, true);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("deadAll", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }
 
 void V3Dead::deadifyAllScoped(AstNetlist* nodep) {
     UINFO(2,__FUNCTION__<<": "<<endl);
-    DeadVisitor visitor (nodep, true, true, true, true);
-    V3Global::dumpCheckGlobalTree("deadAllScoped.tree", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    {
+        DeadVisitor visitor (nodep, true, true, true, true);
+    }  // Destruct before checking
+    V3Global::dumpCheckGlobalTree("deadAllScoped", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
 }

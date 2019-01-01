@@ -5,7 +5,7 @@
 # This calls the object directory makefile.  That allows the objects to
 # be placed in the "current directory" which simplifies the Makefile.
 #
-# Copyright 2003-2017 by Wilson Snyder. This program is free software; you can
+# Copyright 2003-2018 by Wilson Snyder. This program is free software; you can
 # redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -33,8 +33,6 @@ ifneq ($(NC_ROOT),)
 #PRODUCTS += --nc
 endif
 
-PRODUCTS += --vlt
-
 # Run tests in parallel.  Requires Parallel::Forker to be installed.
 ifeq ($(CFG_WITH_LONGTESTS),yes)
  DRIVER_FLAGS += -j 0
@@ -46,7 +44,7 @@ endif
 
 .PHONY: test
 test:
-	$(PERL) driver.pl $(DRIVER_FLAGS) $(PRODUCTS)
+	$(PERL) driver.pl $(DRIVER_FLAGS) --vlt --vltmt --dist
 
 ######################################################################
 
@@ -63,6 +61,9 @@ nc:
 vlt:
 	$(PERL) driver.pl $(DRIVER_FLAGS) --vlt --stop
 
+vltmt:
+	$(PERL) driver.pl $(DRIVER_FLAGS) --vltmt --stop
+
 ######################################################################
 
 random:
@@ -73,7 +74,13 @@ random_forever:
 		echo ; \
 	done
 
+#######################################################################
+# Informational - used by some tests
+
+print-cxx-version:
+	$(CXX) --version
+
 ######################################################################
 maintainer-copy::
 clean mostlyclean distclean maintainer-clean::
-	-rm -rf obj_dir simv* simx* csrc cov_work INCA_libs *.log *.key logs vc_hdrs.h
+	-rm -rf obj_* simv* simx* csrc cov_work INCA_libs *.log *.key logs vc_hdrs.h

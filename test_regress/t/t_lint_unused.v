@@ -3,6 +3,8 @@
 // This file ONLY is placed into the Public Domain, for any use,
 // without warranty, 2010 by Wilson Snyder.
 
+`define STRINGIFY(x) `"x`"
+
 module t (/*AUTOARG*/
    // Outputs
    out,
@@ -19,17 +21,17 @@ module t (/*AUTOARG*/
    udp_mux2 udpsub (out, in, in, in);
 
    // Check ignoreds mark as used
-   reg 	  sysused;
+   reg    sysused;
    initial $bboxed(sysused);
 
    // Check file IO.  The fopen is the "driver" all else a usage.
    integer infile;
    integer outfile;
    initial begin
-      outfile = $fopen("obj_dir/t_lint_unused_bad/open.log", "w");
+      outfile = $fopen({`STRINGIFY(`TEST_OBJ_DIR),"/open.log"}, "w");
       $fwrite(outfile, "1\n");
       $fclose(outfile);
-      infile = $fopen("obj_dir/t_lint_unused_bad/open.log", "r");
+      infile = $fopen({`STRINGIFY(`TEST_OBJ_DIR),"/open.log"}, "r");
       if ($fgetc(infile) != "1") begin end
    end
 

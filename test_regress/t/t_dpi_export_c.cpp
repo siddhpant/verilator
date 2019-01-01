@@ -54,7 +54,13 @@ extern "C" {
     extern long long     dpix_f_longint(long long i);
     extern void*         dpix_f_chandle(void* i);
 
-    extern int dpix_sub_inst (int i);
+    extern int dpix_sub_inst(int i);
+
+    extern void dpix_t_reg(svLogic i, svLogic* o);
+    extern void dpix_t_reg15(const svLogicVecVal* i, svLogicVecVal* o);
+    extern void dpix_t_reg95(const svLogicVecVal* i, svLogicVecVal* o);
+    extern void dpix_t_integer(const svLogicVecVal* i, svLogicVecVal* o);
+    extern void dpix_t_time(const svLogicVecVal* i, svLogicVecVal* o);
 }
 
 #endif
@@ -82,7 +88,7 @@ static int check_sub(const char* name, int i) {
 #ifdef TEST_VERBOSE
     printf("svGetScopeFromName(\"%s\") -> %p\n", name, scope);
 #endif
-    CHECK_RESULT_NNULL (scope);
+    CHECK_RESULT_NNULL(scope);
     svScope prev = svGetScope();
     svScope sout = svSetScope(scope);
     CHECK_RESULT(svScope, sout, prev);
@@ -107,7 +113,7 @@ int dpix_run_tests() {
 #endif
 
 #ifndef CADENCE // Unimplemented; how hard is it?
-    printf ("svDpiVersion: %s\n",svDpiVersion());
+    printf("svDpiVersion: %s\n",svDpiVersion());
     CHECK_RESULT (bool,
 		  strcmp(svDpiVersion(), "1800-2005")==0
 		  || strcmp(svDpiVersion(), "P1800-2005")==0
@@ -165,6 +171,51 @@ int dpix_run_tests() {
 	CHECK_RESULT(int, o_vec96[1], ~i_vec96[1]);
 	CHECK_RESULT(int, o_vec96[2], ~i_vec96[2]);
     }
+
+    extern void dpix_t_reg(svLogic i, svLogic* o);
+    {
+        svLogic i = 0;
+        svLogic o;
+        dpix_t_reg(i, &o);
+        CHECK_RESULT(svLogic, o, 1);
+        i = 1;
+        dpix_t_reg(i, &o);
+        CHECK_RESULT(svLogic, o, 0);
+    }
+    {
+        svLogicVecVal i[1]; i[0].aval = 0x12; i[0].bval = 0;
+        svLogicVecVal o[1];
+        dpix_t_reg15(i, o);
+        CHECK_RESULT(int, o[0].aval, (~i[0].aval) & 0x7fff);
+        CHECK_RESULT(int, o[0].bval, 0);
+    }
+    {
+        svLogicVecVal i[3];
+        i[0].aval = 0x72912312; i[0].bval = 0;
+        i[1].aval = 0xab782a12; i[1].bval = 0;
+        i[2].aval = 0x8a413bd9; i[2].bval = 0;
+        svLogicVecVal o[3];
+        dpix_t_reg95(i, o);
+        CHECK_RESULT(int, o[0].aval, ~i[0].aval);
+        CHECK_RESULT(int, o[1].aval, ~i[1].aval);
+        CHECK_RESULT(int, o[2].aval, (~i[2].aval)&0x7fffffffUL);
+        CHECK_RESULT(int, o[0].bval, 0);
+        CHECK_RESULT(int, o[1].bval, 0);
+        CHECK_RESULT(int, o[2].bval, 0);
+    }
+#if !defined(VCS) && !defined(CADENCE)
+    {
+        svLogicVecVal i[2];
+        i[0].aval = 0x72912312; i[0].bval = 0;
+        i[1].aval = 0xab782a12; i[1].bval = 0;
+        svLogicVecVal o[2];
+        dpix_t_time(i, o);
+        CHECK_RESULT(int, o[0].aval, ~i[0].aval);
+        CHECK_RESULT(int, o[1].aval, ~i[1].aval);
+        CHECK_RESULT(int, o[0].bval, 0);
+        CHECK_RESULT(int, o[1].bval, 0);
+    }
+#endif
 
     if (int bad=check_sub("top.t.a",1)) return bad;
     if (int bad=check_sub("top.t.b",2)) return bad;

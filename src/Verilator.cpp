@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,8 +20,6 @@
 
 #include "V3Global.h"
 #include "V3Ast.h"
-#include <ctime>
-#include <sys/stat.h>
 
 #include "V3Active.h"
 #include "V3ActiveTop.h"
@@ -73,9 +71,12 @@
 #include "V3Param.h"
 #include "V3Parse.h"
 #include "V3ParseSym.h"
+#include "V3Partition.h"
 #include "V3PreShell.h"
 #include "V3Premit.h"
+#include "V3Reloop.h"
 #include "V3Scope.h"
+#include "V3Scoreboard.h"
 #include "V3Slice.h"
 #include "V3Split.h"
 #include "V3SplitAs.h"
@@ -87,10 +88,14 @@
 #include "V3Trace.h"
 #include "V3TraceDecl.h"
 #include "V3Tristate.h"
+#include "V3TSP.h"
 #include "V3Undriven.h"
 #include "V3Unknown.h"
 #include "V3Unroll.h"
 #include "V3Width.h"
+
+#include <ctime>
+#include <sys/stat.h>
 
 V3Global v3Global;
 
@@ -106,7 +111,7 @@ AstNetlist* V3Global::makeNetlist() {
 void V3Global::checkTree() { rootp()->checkTree(); }
 
 void V3Global::clear() {
-    if (m_rootp) m_rootp->deleteTree(); m_rootp=NULL;
+    if (m_rootp) { m_rootp->deleteTree(); m_rootp=NULL; }
 }
 
 void V3Global::readFiles() {
@@ -144,13 +149,14 @@ void V3Global::readFiles() {
     }
 }
 
-void V3Global::dumpCheckGlobalTree(const string& filename, int newNumber, bool doDump) {
-    v3Global.rootp()->dumpTreeFile(v3Global.debugFilename(filename, newNumber), false, doDump);
+void V3Global::dumpCheckGlobalTree(const string& stagename, int newNumber, bool doDump) {
+    v3Global.rootp()->dumpTreeFile(v3Global.debugFilename(stagename+".tree", newNumber), false, doDump);
+    if (v3Global.opt.stats()) V3Stats::statsStage(stagename);
 }
 
 //######################################################################
 
-void process () {
+void process() {
     // Sort modules by level so later algorithms don't need to care
     V3LinkLevel::modSortByLevel();
     V3Error::abortIfErrors();
@@ -230,13 +236,13 @@ void process () {
     }
 
     if (!v3Global.opt.xmlOnly()) {
-	// Expand inouts, stage 2
-	// Also simplify pin connections to always be AssignWs in prep for V3Unknown
-	V3Tristate::tristateAll(v3Global.rootp());
-
 	// Task inlining & pushing BEGINs names to variables/cells
 	// Begin processing must be after Param, before module inlining
 	V3Begin::debeginAll(v3Global.rootp());	// Flatten cell names, before inliner
+
+        // Expand inouts, stage 2
+        // Also simplify pin connections to always be AssignWs in prep for V3Unknown
+        V3Tristate::tristateAll(v3Global.rootp());
 
 	// Move assignments from X into MODULE temps.
 	// (Before flattening, so each new X variable is shared between all scopes of that module.)
@@ -475,12 +481,21 @@ void process () {
 	V3Const::constifyCpp(v3Global.rootp());
 	V3Subst::substituteAll(v3Global.rootp());
     }
+
     if (!v3Global.opt.xmlOnly()
 	&& v3Global.opt.oSubstConst()) {
 	// Constant folding of substitutions
 	V3Const::constifyCpp(v3Global.rootp());
 
 	V3Dead::deadifyAll(v3Global.rootp());
+    }
+
+    if (!v3Global.opt.lintOnly()
+        && !v3Global.opt.xmlOnly()
+        && v3Global.opt.oReloop()) {
+        // Reform loops to reduce code size
+        // Must be after all Sel/array index based optimizations
+        V3Reloop::reloopAll(v3Global.rootp());
     }
 
     if (!v3Global.opt.lintOnly()
@@ -511,6 +526,14 @@ void process () {
 	V3EmitC::emitcSyms();
 	V3EmitC::emitcTrace();
     }
+    if (!v3Global.opt.xmlOnly()
+        && v3Global.opt.mtasks()) {
+        // Finalize our MTask cost estimates and pack the mtasks into
+        // threads. Must happen pre-EmitC which relies on the packing
+        // order. Must happen post-V3LifePost which changes the relative
+        // costs of mtasks.
+        V3Partition::finalize();
+    }
     if (!v3Global.opt.xmlOnly()) { // Unfortunately we have some lint checks in emitc.
 	V3EmitC::emitc();
     }
@@ -539,11 +562,11 @@ void process () {
 
 int main(int argc, char** argv, char** env) {
     // General initialization
-    ios::sync_with_stdio();
+    std::ios::sync_with_stdio();
 
     time_t randseed;
     time(&randseed);
-    srand( (int) randseed);
+    srand(static_cast<int>(randseed));
 
     // Post-constructor initialization of netlists
     v3Global.boot();
@@ -568,8 +591,6 @@ int main(int argc, char** argv, char** env) {
     V3Options::getenvSYSTEMC_ARCH();
     V3Options::getenvSYSTEMC_INCLUDE();
     V3Options::getenvSYSTEMC_LIBDIR();
-    V3Options::getenvSYSTEMPERL();
-    V3Options::getenvSYSTEMPERL_INCLUDE();
 
     V3Error::abortIfErrors();
 
@@ -584,17 +605,23 @@ int main(int argc, char** argv, char** env) {
 	exit(0);
     }
 
-    // Internal tests (after option parsing as need debug() setting)
-    VHashSha1::selfTest();
-    AstBasicDTypeKwd::test();
-    V3Graph::test();
-
     //--FRONTEND------------------
 
     // Cleanup
     V3Os::unlinkRegexp(v3Global.opt.makeDir(), v3Global.opt.prefix()+"_*.tree");
     V3Os::unlinkRegexp(v3Global.opt.makeDir(), v3Global.opt.prefix()+"_*.dot");
     V3Os::unlinkRegexp(v3Global.opt.makeDir(), v3Global.opt.prefix()+"_*.txt");
+
+    // Internal tests (after option parsing as need debug() setting,
+    // and after removing files as may make debug output)
+    VHashSha1::selfTest();
+    AstBasicDTypeKwd::selfTest();
+    V3Graph::selfTest();
+    if (v3Global.opt.debugSelfTest()) {
+        V3TSP::selfTest();
+        V3ScoreboardBase::selfTest();
+        V3Partition::selfTest();
+    }
 
     // Read first filename
     v3Global.readFiles();
@@ -605,7 +632,7 @@ int main(int argc, char** argv, char** env) {
     }
 
     // Final steps
-    V3Global::dumpCheckGlobalTree("final.tree", 990, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    V3Global::dumpCheckGlobalTree("final", 990, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
     V3Error::abortIfWarnings();
 
     if (!v3Global.opt.lintOnly() && !v3Global.opt.cdc()

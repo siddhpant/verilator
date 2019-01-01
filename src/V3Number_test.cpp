@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2017 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -21,24 +21,25 @@
 // CHEAT!
 #define V3NUMBER_ASCII_BINARY
 #define _V3ERROR_NO_GLOBAL_ 1
-#include "V3Error.cpp"
-#include "V3FileLine.cpp"
-#include "V3Number.cpp"
 
 #include <config_build.h>
 #include "verilatedos.h"
-#include <cstdio>
-#include <cstdarg>
-#include <algorithm>
+
+#include "V3Error.cpp"
+#include "V3FileLine.cpp"
+#include "V3Number.cpp"
 #include "V3Number.h"
 
-void test(string lhss, string op, string rhss, string exps) {
+#include <algorithm>
+#include <cstdarg>
+
+void test(const string& lhss, const string& op, const string& rhss, const string& exps) {
     char* l1 = strdup(lhss.c_str());
     char* r1 = strdup(rhss.c_str());
     char* e1 = strdup(exps.c_str());
 
-    V3Number lhnum (new FileLine ("ck",__LINE__), l1);
-    V3Number rhnum (new FileLine ("ck",__LINE__), r1);
+    V3Number lhnum (new FileLine("ck",__LINE__), l1);
+    V3Number rhnum (new FileLine("ck",__LINE__), r1);
     V3Number expnum (new FileLine("ck",__LINE__), e1);
 
     V3Number gotnum (new FileLine("ck",__LINE__), expnum.width());
@@ -86,6 +87,10 @@ void test(string lhss, string op, string rhss, string exps) {
     if (ok.toUInt()!=1) {
 	v3fatalSrc("%Error:Test FAILED");
     }
+
+    free(l1);
+    free(r1);
+    free(e1);
 }
 
 int main() {
