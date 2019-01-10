@@ -116,6 +116,8 @@ public:
 	IGNMOD,		// Ignore module for --lint-only (by Kris)
 	IGNDEF,		// Ignore define for --lint-only (by Kris)
 	IGNUNUSED,	// Ignore unused warning for --lint-only (by Kris)
+    OUTPUTPINEMPTY, // Output pin empty warning (by Kris)
+    INPUTPINEMPTY, // Input pin empty warning (by Kris)
 	_ENUM_MAX
 	// ***Add new elements below also***
     };
@@ -154,7 +156,7 @@ public:
             "UNPACKED", "UNSIGNED", "UNUSED",
 	    "USERERROR", "USERFATAL", "USERINFO", "USERWARN",
 	    "VARHIDDEN", "WIDTH", "WIDTHCONCAT",
-        "IGNINC", "IGNMOD", "IGNDEF", "IGNUNUSED", // by Kris
+        "IGNINC", "IGNMOD", "IGNDEF", "IGNUNUSED", "OUTPUTPINEMPTY", "INPUTPINEMPTY", // by Kris
 	    " MAX"
 	};
 	return names[m_e];

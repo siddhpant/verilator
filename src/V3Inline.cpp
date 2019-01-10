@@ -540,8 +540,16 @@ private:
 						       nodep->name(), nodep->modp()->origName());
 	    m_modp->addInlinesp(inlinep);  // Must be parsed before any AstCells
 	    // Create assignments to the pins
-            for (AstPin* pinp = nodep->pinsp(); pinp; pinp=VN_CAST(pinp->nextp(), Pin)) {
-		if (!pinp->exprp()) continue;
+        for (AstPin* pinp = nodep->pinsp(); pinp; pinp=VN_CAST(pinp->nextp(), Pin)) {
+            // Kris
+    		if (!pinp->exprp()) {
+                if (pinp->modVarp()->direction() == VDirection::OUTPUT) {
+                    pinp->v3warn(OUTPUTPINEMPTY, "Output pin connected by name with empty reference: "<<pinp->prettyName());
+                } else {
+                    pinp->v3warn(INPUTPINEMPTY, "Input pin connected by name with empty reference: "<<pinp->prettyName());
+                }
+                continue;
+            }
 		UINFO(6,"     Pin change from "<<pinp->modVarp()<<endl);
 		// Make new signal; even though we'll optimize the interconnect, we
 		// need an alias to trace correctly.  If tracing is disabled, we'll
