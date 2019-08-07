@@ -3,7 +3,7 @@
 //
 // THIS MODULE IS PUBLICLY LICENSED
 //
-// Copyright 2012-2018 by Wilson Snyder.  This program is free software;
+// Copyright 2012-2019 by Wilson Snyder.  This program is free software;
 // you can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
 //
@@ -52,6 +52,10 @@ public:
 
     // METHODS
     static vluint64_t yields() { return s_yields; }
+    static void yieldThread() {
+        ++s_yields;  // Statistics
+        std::this_thread::yield();
+    }
 
     // Block until notify() has occurred, then return.
     // If notify() has already occurred, return immediately.
@@ -63,11 +67,10 @@ public:
         unsigned ct = 0;
         while (VL_UNLIKELY(!notified())) {
             VL_CPU_RELAX();
-            ct++;
+            ++ct;
             if (VL_UNLIKELY(ct > VL_LOCK_SPINS)) {
                 ct = 0;
-                ++s_yields;  // Statistics
-                std::this_thread::yield();
+                yieldThread();
             }
         }
     }
@@ -149,8 +152,14 @@ public:
         return m_upstreamDepsDone.load(std::memory_order_acquire) == target;
     }
     inline void waitUntilUpstreamDone(bool evenCycle) const {
+        unsigned ct = 0;
         while (VL_UNLIKELY(!areUpstreamDepsDone(evenCycle))) {
             VL_CPU_RELAX();
+            ++ct;
+            if (VL_UNLIKELY(ct > VL_LOCK_SPINS)) {
+                ct = 0;
+                VlNotification::yieldThread();
+            }
         }
     }
 };

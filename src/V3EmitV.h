@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2019 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -33,8 +33,9 @@ class V3EmitV {
 public:
     static void emitv();
     static void verilogForTree(AstNode* nodep, std::ostream& os=std::cout);
-    static void verilogPrefixedTree(AstNode* nodep, std::ostream& os, const string& prefix, int flWidth,
+    static void verilogPrefixedTree(AstNode* nodep, std::ostream& os,
+                                    const string& prefix, int flWidth,
                                     AstSenTree* domainp, bool user3mark);
 };
 
-#endif // Guard
+#endif  // Guard

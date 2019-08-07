@@ -3,7 +3,7 @@
 //
 // THIS MODULE IS PUBLICLY LICENSED
 //
-// Copyright 2001-2018 by Wilson Snyder.  This program is free software;
+// Copyright 2001-2019 by Wilson Snyder.  This program is free software;
 // you can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
 //
@@ -23,6 +23,12 @@
 #include "verilatedos.h"
 #include "verilated.h"
 #include "verilated_fst_c.h"
+
+// GTKWave configuration
+#ifdef VL_TRACE_THREADED
+# define HAVE_LIBPTHREAD
+# define FST_WRITER_PARALLEL
+#endif
 
 // Include the GTKWave implementation directly
 #include "gtkwave/fastlz.c"
@@ -57,7 +63,7 @@ protected:
     VerilatedFstCallInfo(VerilatedFstCallback_t icb, VerilatedFstCallback_t fcb,
                          VerilatedFstCallback_t changecb,
                          void* ut, vluint32_t code)
-        : m_initcb(icb), m_fullcb(fcb), m_changecb(changecb), m_userthis(ut), m_code(code) {};
+        : m_initcb(icb), m_fullcb(fcb), m_changecb(changecb), m_userthis(ut), m_code(code) {}
     ~VerilatedFstCallInfo() {}
 };
 
@@ -72,6 +78,10 @@ VerilatedFst::VerilatedFst(void* fst)
 void VerilatedFst::open(const char* filename) VL_MT_UNSAFE {
     m_assertOne.check();
     m_fst = fstWriterCreate(filename, 1);
+    fstWriterSetPackType(m_fst, FST_WR_PT_LZ4);
+#ifdef VL_TRACE_THREADED
+    fstWriterSetParallelMode(m_fst, 1);
+#endif
     m_curScope.clear();
 
     for (vluint32_t ent = 0; ent< m_callbacks.size(); ++ent) {
@@ -164,7 +174,8 @@ void VerilatedFst::addCallback(
     VerilatedFstCallback_t changecb, void* userthis) VL_MT_UNSAFE_ONE {
     m_assertOne.check();
     if (VL_UNLIKELY(isOpen())) {
-        std::string msg = std::string("Internal: ")+__FILE__+"::"+__FUNCTION__+" called with already open file";
+        std::string msg = (std::string("Internal: ")+__FILE__+"::"+__FUNCTION__
+                           +" called with already open file");
         VL_FATAL_MT(__FILE__,__LINE__,"",msg.c_str());
     }
     VerilatedFstCallInfo* vci = new VerilatedFstCallInfo(initcb, fullcb, changecb, userthis, 1);
@@ -220,15 +231,15 @@ char* VerilatedFst::array2Str(const vluint32_t* newval, int bits) {
     int bq = bits/32, br = bits%32;
     m_valueStrBuffer.resize(bits+1);
     char* s = m_valueStrBuffer.data();
+    for (int i = 0; i < br; ++i) {
+        *s = '0' + ((newval[bq]>>(br-i-1))&1);
+        ++s;
+    }
     for (int w = bq-1; w >= 0; --w) {
         for (int i = 0; i < 32; ++i) {
             *s = '0' + ((newval[w]>>(32-i-1))&1);
             ++s;
         }
-    }
-    for (int i = 0; i < br; ++i) {
-        *s = '0' + ((newval[bq]>>(br-i-1))&1);
-        ++s;
     }
     *s = '\0';
     return m_valueStrBuffer.data();

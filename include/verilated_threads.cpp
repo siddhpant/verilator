@@ -3,7 +3,7 @@
 //
 // THIS MODULE IS PUBLICLY LICENSED
 //
-// Copyright 2012-2018 by Wilson Snyder.  This program is free software;
+// Copyright 2012-2019 by Wilson Snyder.  This program is free software;
 // you can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License Version 2.0.
 //
@@ -119,8 +119,11 @@ VlThreadPool::VlThreadPool(int nThreads, bool profiling)
     // --threads N passes nThreads=N-1, as the "main" threads counts as 1
     unsigned cpus = std::thread::hardware_concurrency();
     if (cpus < nThreads+1) {
-        VL_PRINTF_MT("%%Warning: System has %u CPUs but model Verilated with"
-                     " --threads %d; may run slow.\n", cpus, nThreads+1);
+        static int warnedOnce = 0;
+        if (!warnedOnce++) {
+            VL_PRINTF_MT("%%Warning: System has %u CPUs but model Verilated with"
+                         " --threads %d; may run slow.\n", cpus, nThreads+1);
+        }
     }
     // Create'em
     for (int i=0; i<nThreads; ++i) {

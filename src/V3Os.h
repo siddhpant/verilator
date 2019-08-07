@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2019 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -58,7 +58,7 @@ public:
 
     // METHODS (performance)
     static uint64_t timeUsecs();  ///< Return wall time since epoch in microseconds, or 0 if not implemented
-    static uint64_t memUsageBytes(); ///< Return memory usage in bytes, or 0 if not implemented
+    static uint64_t memUsageBytes();  ///< Return memory usage in bytes, or 0 if not implemented
 };
 
-#endif // Guard
+#endif  // Guard

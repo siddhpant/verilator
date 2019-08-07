@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2018 by Wilson Snyder.  This program is free software; you can
+// Copyright 2004-2019 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -39,10 +39,10 @@ public:
     static bool preproc(FileLine* fl, const string& modname, V3InFilter* filterp,
                         V3ParseImp* parsep, const string& errmsg);
     static void preprocInclude(FileLine* fl, const string& modname);
-    static string dependFiles() { return ""; }   // Perl only
+    static string dependFiles() { return ""; }  // Perl only
     static void defineCmdLine(const string& name, const string& value);
     static void undef(const string& name);
     static void dumpDefines(std::ostream& os);
 };
 
-#endif // Guard
+#endif  // Guard

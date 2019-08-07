@@ -1,19 +1,19 @@
 # DESCRIPTION: Process this file with autoconf to produce a configure script.
 #
-# Copyright 2003-2018 by Wilson Snyder. Verilator is free software; you can
+# Copyright 2003-2019 by Wilson Snyder. Verilator is free software; you can
 # redistribute it and/or modify it under the terms of either the GNU Lesser
 # General Public License Version 3 or the Perl Artistic License Version 2.0.
 
 #AC_INIT([Verilator],[#.### YYYY-MM-DD])
 #AC_INIT([Verilator],[#.### devel])
-AC_INIT([Verilator],[4.008 2018-12-01],
+AC_INIT([Verilator],[4.016 2019-06-16],
         [https://www.veripool.org/verilator],
         [verilator],[https://www.veripool.org/verilator])
 # When releasing, also update header of Changes file
 # and commit using "devel release" or "Version bump" message
 
 AC_CONFIG_HEADER(src/config_build.h)
-AC_CONFIG_FILES(Makefile src/Makefile src/Makefile_obj include/verilated.mk include/verilated_config.h verilator.pc)
+AC_CONFIG_FILES(Makefile docs/Makefile src/Makefile src/Makefile_obj include/verilated.mk include/verilated_config.h verilator.pc)
 
 AC_MSG_RESULT([configuring for $PACKAGE_STRING])
 

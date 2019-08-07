@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2018 by Wilson Snyder.  This program is free software; you can
+// Copyright 2004-2019 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -41,83 +41,95 @@ class EmitXmlFileVisitor : public AstNVisitor {
     // AstNode::user1           -> uint64_t, number to connect crossrefs
 
     // MEMBERS
-    V3OutFile*	m_ofp;
-    uint64_t	m_id;
+    V3OutFile*  m_ofp;
+    uint64_t    m_id;
 
     // METHODS
     VL_DEBUG_FUNC;  // Declare debug()
 
     // Outfile methods
-    V3OutFile*	ofp() const { return m_ofp; }
+    V3OutFile*  ofp() const { return m_ofp; }
     virtual void puts(const string& str) { ofp()->puts(str); }
     virtual void putbs(const string& str) { ofp()->putbs(str); }
     virtual void putfs(AstNode*, const string& str) { putbs(str); }
     virtual void putqs(AstNode*, const string& str) { putbs(str); }
     virtual void putsNoTracking(const string& str) { ofp()->putsNoTracking(str); }
     virtual void putsQuoted(const string& str) {
-	// Quote \ and " for use inside C programs
-	// Don't use to quote a filename for #include - #include doesn't \ escape.
-	// Duplicate in V3File - here so we can print to string
-	putsNoTracking("\"");
-	putsNoTracking(V3Number::quoteNameControls(str));
-	putsNoTracking("\"");
+        // Quote \ and " for use inside C programs
+        // Don't use to quote a filename for #include - #include doesn't \ escape.
+        // Duplicate in V3File - here so we can print to string
+        putsNoTracking("\"");
+        putsNoTracking(V3OutFormatter::quoteNameControls(str, V3OutFormatter::LA_XML));
+        putsNoTracking("\"");
     }
 
     // XML methods
     void outputId(AstNode* nodep) {
-	if (!nodep->user1()) { nodep->user1(++m_id); }
-	puts("\""+cvtToStr(nodep->user1())+"\"");
+        if (!nodep->user1()) { nodep->user1(++m_id); }
+        puts("\""+cvtToStr(nodep->user1())+"\"");
     }
     void outputTag(AstNode* nodep, string tag) {
-	if (tag=="") tag = VString::downcase(nodep->typeName());
-	puts("<"+tag+" "+nodep->fileline()->xml());
+        if (tag=="") tag = VString::downcase(nodep->typeName());
+        puts("<"+tag+" "+nodep->fileline()->xml());
         if (VN_IS(nodep, NodeDType)) { puts(" id="); outputId(nodep); }
-	if (nodep->name()!="") { puts(" name="); putsQuoted(nodep->prettyName()); }
-	if (nodep->tag()!="") { puts(" tag="); putsQuoted(nodep->tag()); }
+        if (nodep->name()!="") { puts(" name="); putsQuoted(nodep->prettyName()); }
+        if (nodep->tag()!="") { puts(" tag="); putsQuoted(nodep->tag()); }
         if (AstNodeDType* dtp = VN_CAST(nodep, NodeDType)) {
-	    if (dtp->subDTypep()) { puts(" sub_dtype_id="); outputId(dtp->subDTypep()->skipRefp()); }
-	} else {
-	    if (nodep->dtypep()) { puts(" dtype_id="); outputId(nodep->dtypep()->skipRefp()); }
-	}
+            if (dtp->subDTypep()) {
+                puts(" sub_dtype_id="); outputId(dtp->subDTypep()->skipRefp());
+            }
+        } else {
+            if (nodep->dtypep()) { puts(" dtype_id="); outputId(nodep->dtypep()->skipRefp()); }
+        }
     }
     void outputChildrenEnd(AstNode* nodep, string tag) {
-	if (tag=="") tag = VString::downcase(nodep->typeName());
-	if (nodep->op1p() || nodep->op2p() || nodep->op3p() || nodep->op4p()) {
-	    puts(">\n");
+        if (tag=="") tag = VString::downcase(nodep->typeName());
+        if (nodep->op1p() || nodep->op2p() || nodep->op3p() || nodep->op4p()) {
+            puts(">\n");
             iterateChildren(nodep);
-	    puts("</"+tag+">\n");
-	} else {
-	    puts("/>\n");
-	}
+            puts("</"+tag+">\n");
+        } else {
+            puts("/>\n");
+        }
     }
 
     // VISITORS
     virtual void visit(AstAssignW* nodep) {
-        outputTag(nodep, "contassign"); // IEEE: vpiContAssign
+        outputTag(nodep, "contassign");  // IEEE: vpiContAssign
         outputChildrenEnd(nodep, "contassign");
     }
     virtual void visit(AstCell* nodep) {
-        outputTag(nodep, "instance");   // IEEE: vpiInstance
+        outputTag(nodep, "instance");  // IEEE: vpiInstance
         puts(" defName="); putsQuoted(nodep->modName());  // IEEE vpiDefName
         puts(" origName="); putsQuoted(nodep->origName());
         outputChildrenEnd(nodep, "instance");
     }
     virtual void visit(AstNetlist* nodep) {
-	puts("<netlist>\n");
+        puts("<netlist>\n");
         iterateChildren(nodep);
-	puts("</netlist>\n");
+        puts("</netlist>\n");
     }
     virtual void visit(AstNodeModule* nodep) {
-	outputTag(nodep, "");
-	puts(" origName="); putsQuoted(nodep->origName());
-	if (nodep->level()==1 || nodep->level()==2) // ==2 because we don't add wrapper when in XML mode
-	    puts(" topModule=\"1\"");  // IEEE vpiTopModule
-	outputChildrenEnd(nodep, "");
+        outputTag(nodep, "");
+        puts(" origName="); putsQuoted(nodep->origName());
+        if (nodep->level()==1 || nodep->level()==2)  // ==2 because we don't add wrapper when in XML mode
+            puts(" topModule=\"1\"");  // IEEE vpiTopModule
+        outputChildrenEnd(nodep, "");
     }
     virtual void visit(AstVar* nodep) {
-	outputTag(nodep, "");
-	puts(" origName="); putsQuoted(nodep->origName());
-	outputChildrenEnd(nodep, "");
+        AstVarType typ = nodep->varType();
+        string kw = nodep->verilogKwd();
+        string vt = nodep->dtypep()->name();
+        outputTag(nodep, "");
+        if (nodep->isIO()) {
+            puts(" dir="); putsQuoted(kw);
+            puts(" vartype="); putsQuoted(!vt.empty()
+                                          ? vt : typ == AstVarType::PORT ? "port" : "unknown");
+        } else {
+            puts(" vartype="); putsQuoted(!vt.empty() ? vt : kw);
+        }
+        puts(" origName="); putsQuoted(nodep->origName());
+        outputChildrenEnd(nodep, "");
     }
     virtual void visit(AstPin* nodep) {
         // What we call a pin in verilator is a port in the IEEE spec.
@@ -134,26 +146,62 @@ class EmitXmlFileVisitor : public AstNVisitor {
         puts(" edgeType=\""+cvtToStr(nodep->edgeType().ascii())+"\"");  // IEEE vpiTopModule
         outputChildrenEnd(nodep, "");
     }
+    virtual void visit(AstModportVarRef* nodep) {
+        // Dump direction for Modport references
+        string kw = nodep->direction().xmlKwd();
+        outputTag(nodep, "");
+        puts(" direction="); putsQuoted(kw);
+        outputChildrenEnd(nodep, "");
+    }
+    virtual void visit(AstVarXRef* nodep) {
+        outputTag(nodep, "");
+        puts(" dotted="); putsQuoted(nodep->dotted());
+        outputChildrenEnd(nodep, "");
+    }
 
     // Data types
     virtual void visit(AstBasicDType* nodep) {
-	outputTag(nodep, "basicdtype ");
-	if (nodep->isRanged()) {
-	    puts(" left=\""+cvtToStr(nodep->left())+"\"");
-	    puts(" right=\""+cvtToStr(nodep->right())+"\"");
-	}
-	puts("/>\n");
+        outputTag(nodep, "basicdtype");
+        if (nodep->isRanged()) {
+            puts(" left=\""+cvtToStr(nodep->left())+"\"");
+            puts(" right=\""+cvtToStr(nodep->right())+"\"");
+        }
+        puts("/>\n");
+    }
+    virtual void visit(AstIfaceRefDType* nodep) {
+        string mpn;
+        outputTag(nodep, "");
+        if (nodep->isModport()) mpn = nodep->modportName();
+        puts(" modportname="); putsQuoted(mpn);
+        outputChildrenEnd(nodep, "");
+    }
+    virtual void visit(AstDisplay* nodep) {
+        outputTag(nodep, "");
+        puts(" displaytype="); putsQuoted(nodep->verilogKwd());
+        outputChildrenEnd(nodep, "");
+    }
+    virtual void visit(AstExtend* nodep) {
+        outputTag(nodep, "");
+        puts(" width="); putsQuoted(cvtToStr(nodep->width()));
+        puts(" widthminv="); putsQuoted(cvtToStr(nodep->lhsp()->widthMinV()));
+        outputChildrenEnd(nodep, "");
+    }
+    virtual void visit(AstExtendS* nodep) {
+        outputTag(nodep, "");
+        puts(" width="); putsQuoted(cvtToStr(nodep->width()));
+        puts(" widthminv="); putsQuoted(cvtToStr(nodep->lhsp()->widthMinV()));
+        outputChildrenEnd(nodep, "");
     }
 
     // Default
     virtual void visit(AstNode* nodep) {
-	outputTag(nodep, "");
-	outputChildrenEnd(nodep, "");
+        outputTag(nodep, "");
+        outputChildrenEnd(nodep, "");
     }
 public:
     EmitXmlFileVisitor(AstNode* nodep, V3OutFile* ofp) {
-	m_ofp = ofp;
-	m_id = 0;
+        m_ofp = ofp;
+        m_id = 0;
         iterate(nodep);
     }
     virtual ~EmitXmlFileVisitor() {}
@@ -290,9 +338,9 @@ void V3EmitXml::emitxml() {
     of.puts("<!-- DESCR" "IPTION: Verilator output: XML representation of netlist -->\n");
     of.puts("<verilator_xml>\n");
     {
-	std::stringstream sstr;
-	FileLine::fileNameNumMapDumpXml(sstr);
-	of.puts(sstr.str());
+        std::stringstream sstr;
+        FileLine::fileNameNumMapDumpXml(sstr);
+        of.puts(sstr.str());
     }
     {
         std::stringstream sstr;

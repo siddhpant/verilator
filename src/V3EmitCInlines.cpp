@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2018 by Wilson Snyder.  This program is free software; you can
+// Copyright 2003-2019 by Wilson Snyder.  This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -46,9 +46,11 @@ class EmitCInlines : EmitCBaseVisitor {
             v3Global.needHeavy(true);
         }
     }
+    virtual void visit(AstValuePlusArgs* nodep) {
+        v3Global.needHeavy(true);
+        iterateChildren(nodep);
+    }
 
-    // NOPs
-    virtual void visit(AstNodeStmt*) {}
     // Default
     virtual void visit(AstNode* nodep) {
         iterateChildren(nodep);
@@ -82,7 +84,7 @@ void EmitCInlines::emitInt() {
     // Placeholder - v3Global.needHInlines(true) currently not used
 
     puts("//======================\n\n");
-    puts("#endif // guard\n");
+    puts("#endif  // guard\n");
 }
 
 //######################################################################
