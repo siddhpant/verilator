@@ -352,6 +352,13 @@ private:
                               " (IEEE 2005 6.1; Verilog only, legal in SV): "
                               +nodep->prettyName());
             }
+            // Kris, for output reg
+            if (v3Global.opt.lintOnly() && m_inContAssign && nodep->varp()->varType() == AstVarType::PORT
+                && !nodep->fileline()->language().systemVerilog()) {
+                nodep->v3warn(CONTASSREG, "Continuous assignment to reg, perhaps intended wire"
+                              " (IEEE 2005 6.1; Verilog only, legal in SV): "
+                              +nodep->prettyName());
+            } // <--
         }
         for (int usr=1; usr<(m_alwaysCombp?3:2); ++usr) {
             UndrivenVarEntry* entryp = getEntryp(nodep->varp(), usr);

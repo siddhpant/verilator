@@ -132,6 +132,11 @@ AstVar* V3ParseGrammar::createVariable(FileLine* fileline, string name,
     AstNodeDType* dtypep = GRAMMARP->m_varDTypep;
     UINFO(5,"  creVar "<<name<<"  decl="<<GRAMMARP->m_varDecl
           <<"  io="<<GRAMMARP->m_varIO<<"  dt="<<(dtypep?"set":"")<<endl);
+    // Kris, to make default output type wire
+    if (v3Global.opt.lintOnly() && !fileline->language().systemVerilog()
+        && GRAMMARP->m_varDecl == AstVarType::PORT && GRAMMARP->m_varIO == VDirection::OUTPUT && (!dtypep)) {
+        GRAMMARP->m_varDecl = AstVarType::WIRE;
+    } // <--
     if (GRAMMARP->m_varIO == VDirection::NONE
         && GRAMMARP->m_varDecl == AstVarType::PORT) {
         // Just a port list with variable name (not v2k format); AstPort already created
