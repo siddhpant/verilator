@@ -115,7 +115,6 @@ public:
         WIDTH,          // Width mismatch
         WIDTHCONCAT,    // Unsized numbers/parameters in concatenations
 	IGNINC,		// Ignore include file for --lint-only (by Kris)
-	IGNMOD,		// Ignore module for --lint-only (by Kris)
 	IGNDEF,		// Ignore define for --lint-only (by Kris)
 	IGNUNUSED,	// Ignore unused warning for --lint-only (by Kris)
     OUTPUTPINEMPTY, // Output pin empty warning (by Kris)
@@ -159,7 +158,7 @@ public:
             "UNPACKED", "UNSIGNED", "UNUSED",
             "USERERROR", "USERFATAL", "USERINFO", "USERWARN",
             "VARHIDDEN", "WIDTH", "WIDTHCONCAT",
-        	"IGNINC", "IGNMOD", "IGNDEF", "IGNUNUSED", "OUTPUTPINEMPTY", "INPUTPINEMPTY", // by Kris
+        	"IGNINC", "IGNDEF", "IGNUNUSED", "OUTPUTPINEMPTY", "INPUTPINEMPTY", // by Kris
             " MAX"
         };
         return names[m_e];
