@@ -77,7 +77,6 @@ class FileLine {
 public:
     // by Kris,
     static std::set<int>    m_igndef;    // to record preproc error lines
-    static bool        m_ignmod;    // to ignore submodule file
     static std::set<string> m_ignunused; // to ignore unused warnings
 
 private:

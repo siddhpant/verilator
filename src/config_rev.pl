@@ -18,7 +18,7 @@
 my $dir = $ARGV[0]; defined $dir or die "%Error: No directory argument,";
 chdir $dir;
 
-my $rev = 'UNKNOWN_REV';
+my $rev = 'M32';
 my $data = `git describe`;
 if ($data =~ /(verilator.*)/i) {
     $rev = $1;

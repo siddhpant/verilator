@@ -35,7 +35,6 @@
 
 // by Kris
 std::set<int> FileLine::m_igndef;
-bool FileLine::m_ignmod;
 std::set<string> FileLine::m_ignunused;
 
 //######################################################################

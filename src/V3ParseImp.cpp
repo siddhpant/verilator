@@ -205,13 +205,7 @@ void V3ParseImp::parseFile(FileLine* fileline, const string& modfilename, bool i
     m_inLibrary = inLibrary;
 
     // Preprocess into m_ppBuffer
-    // by Kris
-    bool ok;
-    if (v3Global.opt.lintOnly() && fileline->m_ignmod) {
-        ok = false; fileline->m_ignmod = false;
-    } else {
-        ok = V3PreShell::preproc(fileline, modfilename, m_filterp, this, errmsg);
-    }
+    bool ok = V3PreShell::preproc(fileline, modfilename, m_filterp, this, errmsg);
     if (!ok) {
         if (errmsg != "") return;  // Threw error already
         // Create fake node for later error reporting
